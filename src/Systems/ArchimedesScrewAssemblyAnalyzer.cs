@@ -9,6 +9,7 @@ public static class ArchimedesScrewAssemblyAnalyzer
 {
     public sealed class AssemblyStatus
     {
+        public bool IsAssemblyValid { get; init; }
         public bool IsFunctional { get; init; }
         public string Message { get; init; } = string.Empty;
         public BlockPos? IntakePos { get; init; }
@@ -18,11 +19,11 @@ public static class ArchimedesScrewAssemblyAnalyzer
         public bool HasOutlet { get; init; }
     }
 
-    public static AssemblyStatus Analyze(IWorldAccessor world, BlockPos anyPos)
+    public static AssemblyStatus Analyze(IWorldAccessor world, BlockPos anyPos, float minimumNetworkSpeed = 0.001f)
     {
         if (world.BlockAccessor.GetBlock(anyPos) is not BlockWaterArchimedesScrew start)
         {
-            return new AssemblyStatus { IsFunctional = false, Message = "Target block is not part of a water Archimedes screw assembly." };
+            return new AssemblyStatus { IsAssemblyValid = false, IsFunctional = false, Message = "Target block is not part of a water Archimedes screw assembly." };
         }
 
         BlockPos bottom = anyPos.Copy();
@@ -41,7 +42,7 @@ public static class ArchimedesScrewAssemblyAnalyzer
 
         if (stack.Count == 0)
         {
-            return new AssemblyStatus { IsFunctional = false, Message = "Could not resolve the screw stack." };
+            return new AssemblyStatus { IsAssemblyValid = false, IsFunctional = false, Message = "Could not resolve the screw stack." };
         }
 
         var intakeEntries = stack.Where(entry => entry.Block.IsIntakeBlock()).ToList();
@@ -50,12 +51,12 @@ public static class ArchimedesScrewAssemblyAnalyzer
 
         if (intakeEntries.Count == 0)
         {
-            return new AssemblyStatus { IsFunctional = false, Message = "Assembly has no intake block.", TopPos = topPos };
+            return new AssemblyStatus { IsAssemblyValid = false, IsFunctional = false, Message = "Assembly has no intake block.", TopPos = topPos };
         }
 
         if (intakeEntries.Count > 1)
         {
-            return new AssemblyStatus { IsFunctional = false, Message = "Assembly has more than one intake block.", TopPos = topPos };
+            return new AssemblyStatus { IsAssemblyValid = false, IsFunctional = false, Message = "Assembly has more than one intake block.", TopPos = topPos };
         }
 
         var intakeEntry = intakeEntries[0];
@@ -64,6 +65,7 @@ public static class ArchimedesScrewAssemblyAnalyzer
             return new AssemblyStatus
             {
                 IsFunctional = false,
+                IsAssemblyValid = false,
                 Message = "Intake must be the bottom-most block in the assembly.",
                 IntakePos = intakeEntry.Pos,
                 TopPos = topPos
@@ -75,9 +77,23 @@ public static class ArchimedesScrewAssemblyAnalyzer
             return new AssemblyStatus
             {
                 IsFunctional = false,
+                IsAssemblyValid = false,
                 Message = "Intake is not placed inside a full non-flowing source liquid block.",
                 IntakePos = intakeEntry.Pos,
                 TopPos = topPos
+            };
+        }
+
+        if (outletEntries.Count == 0)
+        {
+            return new AssemblyStatus
+            {
+                IsAssemblyValid = false,
+                IsFunctional = false,
+                Message = "Assembly requires an outlet block at the top.",
+                IntakePos = intakeEntry.Pos,
+                TopPos = topPos,
+                HasOutlet = false
             };
         }
 
@@ -85,6 +101,7 @@ public static class ArchimedesScrewAssemblyAnalyzer
         {
             return new AssemblyStatus
             {
+                IsAssemblyValid = false,
                 IsFunctional = false,
                 Message = "Assembly has more than one outlet block.",
                 IntakePos = intakeEntry.Pos,
@@ -96,6 +113,7 @@ public static class ArchimedesScrewAssemblyAnalyzer
         {
             return new AssemblyStatus
             {
+                IsAssemblyValid = false,
                 IsFunctional = false,
                 Message = "Outlet must be the top-most block in the assembly.",
                 IntakePos = intakeEntry.Pos,
@@ -110,6 +128,7 @@ public static class ArchimedesScrewAssemblyAnalyzer
             {
                 return new AssemblyStatus
                 {
+                    IsAssemblyValid = false,
                     IsFunctional = false,
                     Message = "Only straight screw blocks may appear between the intake and the top/output block.",
                     IntakePos = intakeEntry.Pos,
@@ -127,6 +146,7 @@ public static class ArchimedesScrewAssemblyAnalyzer
             {
                 return new AssemblyStatus
                 {
+                    IsAssemblyValid = false,
                     IsFunctional = false,
                     Message = "Outlet orientation could not be resolved.",
                     IntakePos = intakeEntry.Pos,
@@ -140,11 +160,12 @@ public static class ArchimedesScrewAssemblyAnalyzer
 
         Block solidBlock = world.BlockAccessor.GetBlock(outputPos);
         Block fluidBlock = world.BlockAccessor.GetBlock(outputPos, BlockLayersAccess.Fluid);
-        bool outputClear = solidBlock.Id == 0 && (fluidBlock.Id == 0 || fluidBlock.Code?.Domain == ArchimedesScrewModSystem.ModId);
+        bool outputClear = IsOutputPositionClear(solidBlock, fluidBlock);
         if (!outputClear)
         {
             return new AssemblyStatus
             {
+                IsAssemblyValid = false,
                 IsFunctional = false,
                 Message = $"Output position {outputPos} is blocked by {solidBlock.Code ?? fluidBlock.Code}.",
                 IntakePos = intakeEntry.Pos,
@@ -159,13 +180,14 @@ public static class ArchimedesScrewAssemblyAnalyzer
         var behavior = intakeBe?.GetBehavior<BEBehaviorMPArchimedesScrew>();
         if (behavior?.Network != null)
         {
-            isPowered = System.Math.Abs(behavior.Network.Speed) >= 0.001f;
+            isPowered = System.Math.Abs(behavior.Network.Speed) >= minimumNetworkSpeed;
         }
 
         if (!isPowered)
         {
             return new AssemblyStatus
             {
+                IsAssemblyValid = true,
                 IsFunctional = false,
                 Message = $"Assembly structure is valid, but it is not mechanically powered. Output would be at {outputPos}.",
                 IntakePos = intakeEntry.Pos,
@@ -189,6 +211,7 @@ public static class ArchimedesScrewAssemblyAnalyzer
 
         return new AssemblyStatus
         {
+            IsAssemblyValid = true,
             IsFunctional = true,
             Message = sb.ToString(),
             IntakePos = intakeEntry.Pos,
@@ -197,5 +220,15 @@ public static class ArchimedesScrewAssemblyAnalyzer
             IsPowered = true,
             HasOutlet = outletEntries.Count == 1
         };
+    }
+
+    private static bool IsOutputPositionClear(Block solidBlock, Block fluidBlock)
+    {
+        bool solidClear = solidBlock.Id == 0 || solidBlock.ForFluidsLayer;
+        bool fluidClear = fluidBlock.Id == 0 ||
+                          (fluidBlock.Code?.Domain == ArchimedesScrewModSystem.ModId &&
+                           fluidBlock.Code.Path.StartsWith(ArchimedesScrewModSystem.ManagedWaterCode, System.StringComparison.Ordinal));
+
+        return solidClear && fluidClear;
     }
 }

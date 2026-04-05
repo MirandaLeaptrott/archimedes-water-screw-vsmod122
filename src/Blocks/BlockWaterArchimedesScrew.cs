@@ -120,24 +120,6 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
 
     public override void OnNeighbourBlockChange(IWorldAccessor world, BlockPos pos, BlockPos neibpos)
     {
-        BEBehaviorMPArchimedesScrew? behavior = world.BlockAccessor.GetBlockEntity(pos)?.GetBehavior<BEBehaviorMPArchimedesScrew>();
-        if (behavior != null && !behavior.IsAttachedToBlock())
-        {
-            foreach (BlockFacing face in BlockFacing.VERTICALS)
-            {
-                BlockAngledGears? blockAngledGears = world.BlockAccessor.GetBlock(pos.AddCopy(face)) as BlockAngledGears;
-                if (blockAngledGears == null)
-                {
-                    continue;
-                }
-
-                if (blockAngledGears.Facings.Contains(face.Opposite) && blockAngledGears.Facings.Length == 1)
-                {
-                    world.BlockAccessor.BreakBlock(pos.AddCopy(face), null);
-                }
-            }
-        }
-
         base.OnNeighbourBlockChange(world, pos, neibpos);
     }
 

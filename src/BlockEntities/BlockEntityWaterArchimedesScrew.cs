@@ -177,13 +177,14 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             return;
         }
 
-        bool isController = screwBlock.IsIntakeBlock() && screwBlock.HasValidWaterIntake(Api.World, Pos);
+        var assemblyStatus = ArchimedesScrewAssemblyAnalyzer.Analyze(Api.World, Pos, waterConfig.MinimumNetworkSpeed);
+        bool isController = screwBlock.IsIntakeBlock() && assemblyStatus.IsAssemblyValid;
         LogStateChange("controller validity", ref lastLoggedControllerState, isController);
         if (!isController)
         {
             if (ownedPositions.Count > 0)
             {
-                ReleaseAllManagedWater("controller is no longer a valid intake");
+                ReleaseAllManagedWater($"assembly invalid: {assemblyStatus.Message}");
             }
 
             wasController = false;
@@ -210,7 +211,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             return;
         }
 
-        bool isPowered = IsPowered();
+        bool isPowered = assemblyStatus.IsPowered;
         LogStateChange("powered state", ref lastLoggedPowerState, isPowered);
         if (!isPowered)
         {
@@ -223,7 +224,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             return;
         }
 
-        BlockPos seedPos = GetSeedPosition();
+        BlockPos seedPos = assemblyStatus.OutputPos?.Copy() ?? GetSeedPosition();
         string seedKey = ArchimedesWaterNetworkManager.PosKey(seedPos);
         if (lastLoggedSeedKey != seedKey)
         {
@@ -373,7 +374,10 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         Block solidBlock = Api.World.BlockAccessor.GetBlock(seedPos);
         Block fluidBlock = Api.World.BlockAccessor.GetBlock(seedPos, BlockLayersAccess.Fluid);
 
-        return solidBlock.Id == 0 && (fluidBlock.Id == 0 || waterManager?.IsArchimedesWaterBlock(fluidBlock) == true);
+        bool solidClear = solidBlock.Id == 0 || solidBlock.ForFluidsLayer || waterManager?.IsArchimedesWaterBlock(solidBlock) == true;
+        bool fluidClear = fluidBlock.Id == 0 || waterManager?.IsArchimedesWaterBlock(fluidBlock) == true;
+
+        return solidClear && fluidClear;
     }
 
     private List<BlockPos> CollectGrowthCandidates(BlockPos seedPos)
