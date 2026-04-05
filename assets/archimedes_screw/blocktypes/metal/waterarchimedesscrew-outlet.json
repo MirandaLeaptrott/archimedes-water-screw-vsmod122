@@ -1,0 +1,67 @@
+{
+  "code": "water-archimedesscrew-outlet",
+  "class": "BlockWaterArchimedesScrew",
+  "entityclass": "BlockEntityWaterArchimedesScrew",
+  "entityBehaviors": [
+    {
+      "name": "MPArchimedesScrew",
+      "properties": {
+        "staticShapePartByType": {
+          "*-north": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateX": 180, "rotateY": 90 },
+          "*-east": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateX": 180, "rotateY": 180 },
+          "*-south": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateX": 180, "rotateY": 270 },
+          "*-west": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateX": 180, "rotateY": 0 }
+        }
+      }
+    }
+  ],
+  "behaviors": [
+    { "name": "Lockable" }
+  ],
+  "variantgroups": [
+    { "code": "type", "states": ["north", "east", "south", "west"] }
+  ],
+  "creativeinventory": {
+    "general": ["*-north"],
+    "mechanics": ["*-north"],
+    "archimedes_screw": ["*-north"]
+  },
+  "shapeinventorybyType": {
+    "*": {
+      "base": "block/metal/chute/archimedesscrew-ported-hull",
+      "rotateX": 180,
+      "overlays": [
+        { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180 }
+      ]
+    }
+  },
+  "shapebytype": {
+    "*-north": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180, "rotateY": 90 },
+    "*-east": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180, "rotateY": 180 },
+    "*-south": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180, "rotateY": 270 },
+    "*-west": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180, "rotateY": 0 }
+  },
+  "textures": {
+    "all": { "base": "game:block/metal/sheet/copper1" }
+  },
+  "blockmaterial": "Metal",
+  "lightAbsorption": 0,
+  "drawtype": "json",
+  "replaceable": 160,
+  "resistance": 1.75,
+  "sidesolid": {
+    "all": false
+  },
+  "sideopaque": {
+    "all": false
+  },
+  "sounds": {
+    "place": "block/chute",
+    "break": "block/chute",
+    "hit": "block/chute",
+    "walk": "game:walk/stone"
+  },
+  "collisionselectionboxByType": {
+    "*": { "x1": 0.125, "y1": 0, "z1": 0.125, "x2": 0.875, "y2": 1, "z2": 0.875 }
+  }
+}

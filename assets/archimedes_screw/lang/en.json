@@ -1,0 +1,19 @@
+{
+  "block-water-archimedesscrew-straight": "Water Archimedes Screw",
+  "block-water-archimedesscrew-ported-north": "Water Archimedes Screw Intake",
+  "block-water-archimedesscrew-ported-east": "Water Archimedes Screw Intake",
+  "block-water-archimedesscrew-ported-south": "Water Archimedes Screw Intake",
+  "block-water-archimedesscrew-ported-west": "Water Archimedes Screw Intake",
+  "block-water-archimedesscrew-outlet-north": "Water Archimedes Screw Outlet",
+  "block-water-archimedesscrew-outlet-east": "Water Archimedes Screw Outlet",
+  "block-water-archimedesscrew-outlet-south": "Water Archimedes Screw Outlet",
+  "block-water-archimedesscrew-outlet-west": "Water Archimedes Screw Outlet",
+  "tabname-archimedes_screw": "Archimedes Screw",
+  "archimedes-screw-requires-water": "Requires a full non-flowing source block at the intake position",
+  "config-max-radius": "Maximum radius",
+  "config-fast-tick-ms": "Growth tick interval",
+  "config-idle-tick-ms": "Idle tick interval",
+  "config-max-blocks-per-step": "Blocks grown per tick",
+  "config-max-screw-length": "Maximum screw length",
+  "config-minimum-network-speed": "Minimum powered speed"
+}

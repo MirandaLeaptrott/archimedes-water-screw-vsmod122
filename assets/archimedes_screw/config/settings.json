@@ -1,0 +1,10 @@
+{
+  "water": {
+    "maxRadius": 12,
+    "fastTickMs": 250,
+    "idleTickMs": 2000,
+    "maxBlocksPerStep": 16,
+    "maxScrewLength": 32,
+    "minimumNetworkSpeed": 0.001
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "patches": {
+    "integer": {
+      "archimedes_screw:config/settings.json": {
+        "water/maxRadius": "MAX_RADIUS",
+        "water/fastTickMs": "FAST_TICK_MS",
+        "water/idleTickMs": "IDLE_TICK_MS",
+        "water/maxBlocksPerStep": "MAX_BLOCKS_PER_STEP",
+        "water/maxScrewLength": "MAX_SCREW_LENGTH"
+      }
+    },
+    "float": {
+      "archimedes_screw:config/settings.json": {
+        "water/minimumNetworkSpeed": "MINIMUM_NETWORK_SPEED"
+      }
+    }
+  },
+  "settings": {
+    "integer": {
+      "MAX_RADIUS": {
+        "name": "max-radius",
+        "ingui": "archimedes_screw:config-max-radius",
+        "weight": 1.0,
+        "comment": "Maximum horizontal radius for managed Archimedes water.",
+        "default": 12,
+        "range": {
+          "min": 1,
+          "max": 32,
+          "step": 1
+        }
+      },
+      "FAST_TICK_MS": {
+        "name": "fast-tick-ms",
+        "ingui": "archimedes_screw:config-fast-tick-ms",
+        "weight": 2.0,
+        "comment": "Tick rate while the water front is still growing.",
+        "default": 250,
+        "range": {
+          "min": 50,
+          "max": 5000,
+          "step": 50
+        }
+      },
+      "IDLE_TICK_MS": {
+        "name": "idle-tick-ms",
+        "ingui": "archimedes_screw:config-idle-tick-ms",
+        "weight": 3.0,
+        "comment": "Tick rate once no more air blocks are available to fill.",
+        "default": 2000,
+        "range": {
+          "min": 100,
+          "max": 10000,
+          "step": 100
+        }
+      },
+      "MAX_BLOCKS_PER_STEP": {
+        "name": "max-blocks-per-step",
+        "ingui": "archimedes_screw:config-max-blocks-per-step",
+        "weight": 4.0,
+        "comment": "Maximum number of source blocks that can be created in a single fast tick.",
+        "default": 16,
+        "range": {
+          "min": 1,
+          "max": 128,
+          "step": 1
+        }
+      },
+      "MAX_SCREW_LENGTH": {
+        "name": "max-screw-length",
+        "ingui": "archimedes_screw:config-max-screw-length",
+        "weight": 5.0,
+        "comment": "Safety cap for how many screw blocks are scanned upward to locate the outlet.",
+        "default": 32,
+        "range": {
+          "min": 1,
+          "max": 128,
+          "step": 1
+        }
+      }
+    },
+    "float": {
+      "MINIMUM_NETWORK_SPEED": {
+        "name": "minimum-network-speed",
+        "ingui": "archimedes_screw:config-minimum-network-speed",
+        "weight": 6.0,
+        "comment": "Mechanical network speed below this value counts as unpowered.",
+        "default": 0.001,
+        "range": {
+          "min": 0.0001,
+          "max": 1.0,
+          "step": 0.0001
+        }
+      }
+    }
+  },
+  "formatting": [
+    {
+      "type": "separator",
+      "title": "Archimedes Water Screw",
+      "weight": 0.5
+    }
+  ]
+}

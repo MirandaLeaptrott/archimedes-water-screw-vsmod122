@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "archimedes_screw",
+  "name": "Archimedes Screw",
+  "authors": [
+    "Grym7er"
+  ],
+  "description": "Adds a mechanically powered Archimedes screw that pumps custom managed water.",
+  "version": "0.1.0",
+  "dependencies": {}
+}
