@@ -11,6 +11,10 @@
           "*-ported-east": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateY": 180 },
           "*-ported-south": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateY": 90 },
           "*-ported-west": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateY": 0 },
+          "*-outlet-north": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateX": 180, "rotateY": 90 },
+          "*-outlet-east": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateX": 180, "rotateY": 180 },
+          "*-outlet-south": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateX": 180, "rotateY": 270 },
+          "*-outlet-west": { "base": "block/metal/chute/archimedesscrew-ported-hull", "rotateX": 180, "rotateY": 0 },
           "*": { "base": "block/metal/chute/archimedesscrew-{type}-hull" }
         }
       }
@@ -20,7 +24,20 @@
     { "name": "Lockable" }
   ],
   "variantgroups": [
-    { "code": "type", "states": ["straight", "ported-north", "ported-east", "ported-south", "ported-west"] }
+    {
+      "code": "type",
+      "states": [
+        "straight",
+        "ported-north",
+        "ported-east",
+        "ported-south",
+        "ported-west",
+        "outlet-north",
+        "outlet-east",
+        "outlet-south",
+        "outlet-west"
+      ]
+    }
   ],
   "creativeinventory": {
     "general": ["*-straight", "*-ported-north"],
@@ -39,6 +56,13 @@
       "overlays": [
         { "base": "block/metal/chute/archimedesscrew-ported-shaft" }
       ]
+    },
+    "*-outlet-*": {
+      "base": "block/metal/chute/archimedesscrew-ported-hull",
+      "rotateX": 180,
+      "overlays": [
+        { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180 }
+      ]
     }
   },
   "shapebytype": {
@@ -46,7 +70,11 @@
     "*-ported-north": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateY": 270 },
     "*-ported-east": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateY": 180 },
     "*-ported-south": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateY": 90 },
-    "*-ported-west": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateY": 0 }
+    "*-ported-west": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateY": 0 },
+    "*-outlet-north": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180, "rotateY": 90 },
+    "*-outlet-east": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180, "rotateY": 180 },
+    "*-outlet-south": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180, "rotateY": 270 },
+    "*-outlet-west": { "base": "block/metal/chute/archimedesscrew-ported-shaft", "rotateX": 180, "rotateY": 0 }
   },
   "textures": {
     "all": { "base": "game:block/metal/sheet/copper1" }
@@ -59,6 +87,14 @@
   "sidesolid": {
     "all": false
   },
+  "sidesolidByType": {
+    "*-outlet-*": {
+      "all": true
+    },
+    "*": {
+      "all": false
+    }
+  },
   "sideopaque": {
     "all": false
   },
@@ -69,6 +105,7 @@
     "walk": "game:walk/stone"
   },
   "collisionselectionboxByType": {
+    "*-outlet-*": { "x1": 0, "y1": 0, "z1": 0, "x2": 1, "y2": 1, "z2": 1 },
     "*": { "x1": 0.125, "y1": 0, "z1": 0.125, "x2": 0.875, "y2": 1, "z2": 0.875 }
   }
 }

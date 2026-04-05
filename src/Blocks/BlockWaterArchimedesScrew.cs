@@ -35,21 +35,10 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
             return false;
         }
 
-        BlockWaterArchimedesScrew blockToPlace = this;
-        if (IsDirectionalEndBlock())
+        BlockWaterArchimedesScrew? blockToPlace = ResolveBlockToPlace(world, byPlayer, blockSel, ref failureCode);
+        if (blockToPlace == null)
         {
-            BlockFacing playerFacing = SuggestedHVOrientation(byPlayer, blockSel)[0].Opposite;
-            string variant = GetPlacedVariantForFacing(playerFacing);
-            blockToPlace = ResolveDirectionalVariantBlock(variant)
-                ?? this;
-            api.Logger.Notification(
-                "{0} Placement chose facing {1} and variant '{2}' for {3} at {4}",
-                ArchimedesScrewModSystem.LogPrefix,
-                playerFacing.Code,
-                variant,
-                Code,
-                blockSel.Position
-            );
+            return false;
         }
 
         if (blockToPlace.IsIntakeBlock() && !blockToPlace.HasValidWaterIntake(world, blockSel.Position))
@@ -117,6 +106,127 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
         return false;
     }
 
+    private BlockWaterArchimedesScrew? ResolveBlockToPlace(IWorldAccessor world, IPlayer byPlayer, BlockSelection blockSel, ref string failureCode)
+    {
+        if (IsStraightSegment())
+        {
+            return this;
+        }
+
+        if (IsLegacyOutletBlock())
+        {
+            BlockFacing playerFacing = SuggestedHVOrientation(byPlayer, blockSel)[0].Opposite;
+            string variant = playerFacing.Code;
+            BlockWaterArchimedesScrew? resolved = ResolveLegacyOutletVariantBlock(variant);
+            api.Logger.Notification(
+                "{0} Legacy outlet placement chose facing {1} and variant '{2}' for {3} at {4}",
+                ArchimedesScrewModSystem.LogPrefix,
+                playerFacing.Code,
+                variant,
+                Code,
+                blockSel.Position
+            );
+            return resolved ?? this;
+        }
+
+        if (!IsUnifiedEndCapInHand())
+        {
+            return this;
+        }
+
+        BlockFacing facing = SuggestedHVOrientation(byPlayer, blockSel)[0].Opposite;
+        BlockPos placePos = blockSel.Position;
+
+        if (TryResolveOutletPlacement(world, placePos, out _))
+        {
+            string outletVariant = "outlet-" + facing.Code;
+            BlockWaterArchimedesScrew? outlet = ResolveMainScrewVariantBlock(outletVariant);
+            api.Logger.Notification(
+                "{0} End-cap as outlet: variant {1} at {2}",
+                ArchimedesScrewModSystem.LogPrefix,
+                outletVariant,
+                placePos
+            );
+            return outlet ?? this;
+        }
+
+        if (HasValidWaterIntake(world, placePos))
+        {
+            string intakeVariant = "ported-" + facing.Code;
+            BlockWaterArchimedesScrew? intake = ResolveMainScrewVariantBlock(intakeVariant);
+            api.Logger.Notification(
+                "{0} End-cap as intake: variant {1} at {2}",
+                ArchimedesScrewModSystem.LogPrefix,
+                intakeVariant,
+                placePos
+            );
+            return intake ?? this;
+        }
+
+        failureCode = "archimedes-screw-endcap-context";
+        api.Logger.Notification(
+            "{0} End-cap placement rejected at {1}: need vanilla water here, or place on a straight screw or intake below",
+            ArchimedesScrewModSystem.LogPrefix,
+            placePos
+        );
+        return null;
+    }
+
+    /// <summary>True when the block below supports placing an outlet (straight segment or intake, not another outlet).</summary>
+    public static bool TryResolveOutletPlacement(IWorldAccessor world, BlockPos placePos, out BlockWaterArchimedesScrew? belowScrew)
+    {
+        Block below = world.BlockAccessor.GetBlock(placePos.DownCopy());
+        belowScrew = below as BlockWaterArchimedesScrew;
+        if (belowScrew == null)
+        {
+            return false;
+        }
+
+        if (belowScrew.IsOutletBlock())
+        {
+            return false;
+        }
+
+        return belowScrew.IsStraightSegment() || belowScrew.IsIntakeBlock();
+    }
+
+    public bool IsStraightSegment()
+    {
+        return Code.Path.StartsWith(ArchimedesScrewModSystem.ScrewBlockCode, StringComparison.Ordinal) &&
+               string.Equals(Variant["type"], "straight", StringComparison.Ordinal);
+    }
+
+    private bool IsLegacyOutletBlock()
+    {
+        return Code.Path.StartsWith(ArchimedesScrewModSystem.OutletBlockCode, StringComparison.Ordinal);
+    }
+
+    private bool IsUnifiedEndCapInHand()
+    {
+        if (!Code.Path.StartsWith(ArchimedesScrewModSystem.ScrewBlockCode, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string type = Variant["type"];
+        return type.StartsWith("ported-", StringComparison.Ordinal) ||
+               type.StartsWith("outlet-", StringComparison.Ordinal);
+    }
+
+    private BlockWaterArchimedesScrew? ResolveMainScrewVariantBlock(string typeVariant)
+    {
+        return api.World.GetBlock(
+            new AssetLocation(ArchimedesScrewModSystem.ModId, $"{ArchimedesScrewModSystem.ScrewBlockCode}-{typeVariant}")
+        ) as BlockWaterArchimedesScrew;
+    }
+
+    private BlockWaterArchimedesScrew? ResolveLegacyOutletVariantBlock(string typeVariant)
+    {
+        return api.World.GetBlock(
+            new AssetLocation(ArchimedesScrewModSystem.ModId, $"{ArchimedesScrewModSystem.OutletBlockCode}-{typeVariant}")
+        ) as BlockWaterArchimedesScrew;
+    }
+
     public override void DidConnectAt(IWorldAccessor world, BlockPos pos, BlockFacing face)
     {
     }
@@ -156,7 +266,13 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
 
     public bool IsOutletBlock()
     {
-        return Code.Path.StartsWith(ArchimedesScrewModSystem.OutletBlockCode, StringComparison.Ordinal);
+        if (Code.Path.StartsWith(ArchimedesScrewModSystem.OutletBlockCode, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return Code.Path.StartsWith(ArchimedesScrewModSystem.ScrewBlockCode, StringComparison.Ordinal) &&
+               Variant["type"].StartsWith("outlet-", StringComparison.Ordinal);
     }
 
     public bool IsDirectionalEndBlock()
@@ -166,7 +282,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
 
     public BlockFacing? GetPortFacing()
     {
-        if (IsOutletBlock())
+        if (IsLegacyOutletBlock())
         {
             return Variant["type"] switch
             {
@@ -174,6 +290,18 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
                 "east" => BlockFacing.EAST,
                 "south" => BlockFacing.SOUTH,
                 "west" => BlockFacing.WEST,
+                _ => null
+            };
+        }
+
+        if (IsOutletBlock())
+        {
+            return Variant["type"] switch
+            {
+                "outlet-north" => BlockFacing.NORTH,
+                "outlet-east" => BlockFacing.EAST,
+                "outlet-south" => BlockFacing.SOUTH,
+                "outlet-west" => BlockFacing.WEST,
                 _ => null
             };
         }
@@ -198,24 +326,5 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
     {
         return block.IsLiquid() &&
                ArchimedesWaterFamilies.TryResolveVanillaFamily(block, out _);
-    }
-
-    private string GetPlacedVariantForFacing(BlockFacing facing)
-    {
-        if (IsOutletBlock())
-        {
-            return facing.Code;
-        }
-
-        return "ported-" + facing.Code;
-    }
-
-    private BlockWaterArchimedesScrew? ResolveDirectionalVariantBlock(string variant)
-    {
-        string path = IsOutletBlock()
-            ? $"{ArchimedesScrewModSystem.OutletBlockCode}-{variant}"
-            : $"{ArchimedesScrewModSystem.ScrewBlockCode}-{variant}";
-
-        return api.World.GetBlock(new AssetLocation(ArchimedesScrewModSystem.ModId, path)) as BlockWaterArchimedesScrew;
     }
 }

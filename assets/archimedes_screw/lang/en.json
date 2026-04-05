@@ -10,6 +10,7 @@
   "block-water-archimedesscrew-outlet-west": "Water Archimedes Screw Outlet",
   "tabname-archimedes_screw": "Archimedes Screw",
   "archimedes-screw-requires-water": "Requires a vanilla water block at the intake position",
+  "archimedes-screw-endcap-context": "Place the end cap in vanilla water (intake) or on top of a straight screw or intake (outlet)",
   "config-fast-tick-ms": "Growth tick interval",
   "config-idle-tick-ms": "Idle tick interval",
   "config-max-blocks-per-step": "Sources removed per fast tick when draining",
