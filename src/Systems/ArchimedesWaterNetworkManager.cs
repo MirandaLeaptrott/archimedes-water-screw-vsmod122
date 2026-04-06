@@ -631,19 +631,29 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
 
     public int PurgeManagedWater()
     {
-        HashSet<string> sourceKeys = new(StringComparer.Ordinal);
+        HashSet<string> anchorKeys = new(StringComparer.Ordinal);
 
         foreach (string key in sourceOwnerByPos.Keys)
         {
-            sourceKeys.Add(key);
+            anchorKeys.Add(key);
         }
 
         foreach (int[] flatPositions in controllerOwnedById.Values)
         {
             foreach (BlockPos pos in DecodePositions(flatPositions))
             {
-                sourceKeys.Add(PosKey(pos));
+                anchorKeys.Add(PosKey(pos));
             }
+        }
+
+        foreach (string screwKey in screwBlockKeys)
+        {
+            anchorKeys.Add(screwKey);
+        }
+
+        foreach (string controllerPosKey in controllerPosById.Values)
+        {
+            anchorKeys.Add(controllerPosKey);
         }
 
         foreach (WeakReference<BlockEntityWaterArchimedesScrew> pair in loadedControllers.Values)
@@ -655,16 +665,13 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         }
 
         HashSet<string> allWaterKeys = new(StringComparer.Ordinal);
-        foreach (string key in sourceKeys)
+        foreach (string key in anchorKeys)
         {
             BlockPos pos = ParsePosKey(key);
-            CollectConnectedManagedWater(pos, out Dictionary<string, BlockPos> connectedWater);
-            foreach (string connectedKey in connectedWater.Keys)
-            {
-                allWaterKeys.Add(connectedKey);
-            }
+            CollectManagedComponentKeysAroundAnchor(pos, allWaterKeys);
         }
 
+        int converted = 0;
         int removed = 0;
         List<BlockPos> removedPositions = new();
         foreach (string key in allWaterKeys)
@@ -676,10 +683,20 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
                 continue;
             }
 
-            SuppressRemovalNotification(key);
-            api.World.BlockAccessor.SetBlock(0, pos, BlockLayersAccess.Fluid);
-            removedPositions.Add(pos);
-            removed++;
+            if (TryGetVanillaEquivalent(block, out Block? vanillaEquivalent))
+            {
+                SuppressRemovalNotification(key);
+                api.World.BlockAccessor.SetBlock(vanillaEquivalent.Id, pos, BlockLayersAccess.Fluid);
+                TriggerLiquidUpdates(pos, vanillaEquivalent);
+                converted++;
+            }
+            else
+            {
+                SuppressRemovalNotification(key);
+                api.World.BlockAccessor.SetBlock(0, pos, BlockLayersAccess.Fluid);
+                removedPositions.Add(pos);
+                removed++;
+            }
         }
 
         foreach (BlockPos pos in removedPositions)
@@ -690,8 +707,15 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         sourceOwnerByPos.Clear();
         controllerOwnedById.Clear();
 
-        api.Logger.Notification("{0} PurgeManagedWater removed {1} managed water blocks", ArchimedesScrewModSystem.LogPrefix, removed);
-        return removed;
+        int total = converted + removed;
+        api.Logger.Notification(
+            "{0} PurgeManagedWater replaced {1} managed blocks (convertedToVanilla={2}, removed={3})",
+            ArchimedesScrewModSystem.LogPrefix,
+            total,
+            converted,
+            removed
+        );
+        return total;
     }
 
     public int PurgeScrewsOnly()
@@ -984,6 +1008,62 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
                 neighbourFluid.OnNeighbourBlockChange(api.World, neighbourPos, pos);
             }
         }
+    }
+
+    private void CollectManagedComponentKeysAroundAnchor(BlockPos anchor, HashSet<string> allWaterKeys)
+    {
+        TryCollectManagedComponent(anchor, allWaterKeys);
+        foreach (BlockFacing face in BlockFacing.ALLFACES)
+        {
+            TryCollectManagedComponent(anchor.AddCopy(face), allWaterKeys);
+        }
+    }
+
+    private void TryCollectManagedComponent(BlockPos pos, HashSet<string> allWaterKeys)
+    {
+        string posKey = PosKey(pos);
+        if (allWaterKeys.Contains(posKey))
+        {
+            return;
+        }
+
+        Block fluid = api.World.BlockAccessor.GetBlock(pos, BlockLayersAccess.Fluid);
+        if (!IsArchimedesWaterBlock(fluid))
+        {
+            return;
+        }
+
+        CollectConnectedManagedWater(pos, out Dictionary<string, BlockPos> connectedWater);
+        foreach (string key in connectedWater.Keys)
+        {
+            allWaterKeys.Add(key);
+        }
+    }
+
+    private bool TryGetVanillaEquivalent(Block managedBlock, out Block vanillaBlock)
+    {
+        vanillaBlock = null!;
+        if (!TryResolveManagedWaterFamily(managedBlock, out string familyId))
+        {
+            return false;
+        }
+
+        ArchimedesWaterFamily family = ArchimedesWaterFamilies.GetById(familyId);
+        string flow = managedBlock.Variant?["flow"] ?? "still";
+        string heightText = managedBlock.Variant?["height"] ?? "7";
+        if (!int.TryParse(heightText, out int height))
+        {
+            return false;
+        }
+
+        Block? resolved = api.World.GetBlock(new AssetLocation("game", $"{family.VanillaCode}-{flow}-{height}"));
+        if (resolved == null)
+        {
+            return false;
+        }
+
+        vanillaBlock = resolved;
+        return true;
     }
 
     private static BlockPos ParsePosKey(string key)
