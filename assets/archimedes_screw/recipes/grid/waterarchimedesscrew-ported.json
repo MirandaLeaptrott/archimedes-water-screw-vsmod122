@@ -1,0 +1,12 @@
+{
+  "ingredientPattern": "H_,X_,CS",
+  "ingredients": {
+    "H": { "type": "item", "code": "game:hammer-*", "isTool": true, "toolDurabilityCost": 20 },
+    "S": { "type": "item", "code": "game:shears-*", "isTool": true, "toolDurabilityCost": 20 },
+    "X": { "type": "item", "code": "game:metalplate-lead" },
+    "C": { "type": "item", "code": "archimedes_screw:chutesection-lead" }
+  },
+  "width": 2,
+  "height": 3,
+  "output": { "type": "block", "code": "archimedes_screw:water-archimedesscrew-ported-north", "quantity": 1 }
+}

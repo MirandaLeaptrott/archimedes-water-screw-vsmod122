@@ -6,7 +6,7 @@
     "Grym7er"
   ],
   "description": "Adds a mechanically powered Archimedes screw that pumps custom managed water.",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "dependencies": {
     "game": "1.21.6",
     "survival": ""
