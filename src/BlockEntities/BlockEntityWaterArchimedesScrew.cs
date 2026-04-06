@@ -349,10 +349,6 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         lastSeedPos = seedPos.Copy();
 
         bool ensuredSeed = EnsureSeedSource(seedPos, familyId);
-        int convertedSources = waterManager.ConvertAdjacentVanillaSourcesIteratively(
-            seedPos,
-            waterConfig.MaxVanillaConversionPasses
-        );
 
         waterManager.CollectConnectedManagedWater(seedPos, out Dictionary<string, BlockPos> connectedWater);
 
@@ -364,7 +360,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             UpdateSnapshot();
         }
 
-        bool busyWork = ensuredSeed || convertedSources > 0 || removedDisconnected > 0 || ownedPositions.Count == 0;
+        bool busyWork = ensuredSeed || removedDisconnected > 0 || ownedPositions.Count == 0;
         ArchimedesScrewControllerSchedule nextSchedule = busyWork
             ? ArchimedesScrewControllerSchedule.HighCadence
             : ArchimedesScrewControllerSchedule.LowCadence;
@@ -372,17 +368,16 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
 
         int nextMs = nextSchedule == ArchimedesScrewControllerSchedule.HighCadence ? fastMs : idleMs;
         string sourceSummary =
-            $"seed={seedPos};connectedWater={connectedWater.Count};ownedSources={ownedPositions.Count};supportingSeeds={supportingSeeds.Count};convertedSources={convertedSources};removedDisconnected={removedDisconnected};schedule={nextSchedule};nextIntervalMs={nextMs}";
+            $"seed={seedPos};connectedWater={connectedWater.Count};ownedSources={ownedPositions.Count};supportingSeeds={supportingSeeds.Count};removedDisconnected={removedDisconnected};schedule={nextSchedule};nextIntervalMs={nextMs}";
         if (!string.Equals(lastLoggedSourceSummary, sourceSummary, StringComparison.Ordinal))
         {
             lastLoggedSourceSummary = sourceSummary;
             Log(
-                "Source tick at {0}: connectedWater={1}, ownedSources={2}, supportingSeeds={3}, convertedSources={4}, removedDisconnected={5}, schedule={6}, nextIntervalMs={7}",
+                "Source tick at {0}: connectedWater={1}, ownedSources={2}, supportingSeeds={3}, removedDisconnected={4}, schedule={5}, nextIntervalMs={6}",
                 seedPos,
                 connectedWater.Count,
                 ownedPositions.Count,
                 supportingSeeds.Count,
-                convertedSources,
                 removedDisconnected,
                 nextSchedule,
                 nextMs
