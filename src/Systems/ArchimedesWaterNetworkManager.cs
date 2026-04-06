@@ -557,7 +557,6 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         }
 
         SetManagedSource(pos, familyId);
-        AssignNearestActiveControllerForNewSource(pos, familyId);
         return true;
     }
 
@@ -578,7 +577,6 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
             }
 
             SetManagedSource(pos, familyId);
-            AssignNearestActiveControllerForNewSource(pos, familyId);
             return true;
         }
 
