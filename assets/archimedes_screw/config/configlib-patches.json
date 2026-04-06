@@ -5,6 +5,9 @@
       "archimedes_screw:config/settings.json": {
         "water/fastTickMs": "FAST_TICK_MS",
         "water/idleTickMs": "IDLE_TICK_MS",
+        "water/globalTickMs": "GLOBAL_TICK_MS",
+        "water/maxControllersPerGlobalTick": "MAX_CONTROLLERS_PER_GLOBAL_TICK",
+        "water/assemblyAnalysisCacheMs": "ASSEMBLY_ANALYSIS_CACHE_MS",
         "water/maxBlocksPerStep": "MAX_BLOCKS_PER_STEP",
         "water/maxScrewLength": "MAX_SCREW_LENGTH",
         "water/maxVanillaConversionPasses": "MAX_VANILLA_CONVERSION_PASSES"
@@ -40,6 +43,42 @@
           "min": 100,
           "max": 10000,
           "step": 100
+        }
+      },
+      "GLOBAL_TICK_MS": {
+        "name": "global-tick-ms",
+        "ingui": "archimedes_screw:config-global-tick-ms",
+        "weight": 2.1,
+        "comment": "How often the server scans intake controllers (each scan processes up to maxControllersPerGlobalTick due intakes).",
+        "default": 50,
+        "range": {
+          "min": 10,
+          "max": 500,
+          "step": 10
+        }
+      },
+      "MAX_CONTROLLERS_PER_GLOBAL_TICK": {
+        "name": "max-controllers-per-global-tick",
+        "ingui": "archimedes_screw:config-max-controllers-per-global-tick",
+        "weight": 2.2,
+        "comment": "Caps work per global tick when many screws are loaded.",
+        "default": 48,
+        "range": {
+          "min": 1,
+          "max": 512,
+          "step": 1
+        }
+      },
+      "ASSEMBLY_ANALYSIS_CACHE_MS": {
+        "name": "assembly-analysis-cache-ms",
+        "ingui": "archimedes_screw:config-assembly-analysis-cache-ms",
+        "weight": 2.25,
+        "comment": "Reuse screw stack scan results within this window to avoid duplicate analysis.",
+        "default": 120,
+        "range": {
+          "min": 0,
+          "max": 2000,
+          "step": 20
         }
       },
       "MAX_BLOCKS_PER_STEP": {

@@ -21,8 +21,12 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
     private ArchimedesWaterNetworkManager? waterManager;
     private ArchimedesScrewConfig.WaterConfig? waterConfig;
 
-    private long tickListenerId;
-    private int currentIntervalMs;
+    private long nextCentralWaterTickDueMs;
+    private ArchimedesScrewControllerSchedule lastWaterSchedule = ArchimedesScrewControllerSchedule.HighCadence;
+
+    private long assemblyAnalysisCachedAtMs = long.MinValue;
+    private ArchimedesScrewAssemblyAnalyzer.AssemblyStatus? cachedAssemblyAnalysis;
+
     private bool wasController;
     private BlockPos? lastSeedPos;
     private bool? lastLoggedControllerState;
@@ -55,7 +59,8 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             Log("Restored {0} owned Archimedes source positions from save", ownedPositions.Count);
         }
 
-        EnsureTickListener(waterConfig?.FastTickMs ?? 250);
+        nextCentralWaterTickDueMs = 0;
+        UpdateCentralTickRegistration();
     }
 
     public override void OnBlockPlaced(ItemStack? byItemStack = null)
@@ -63,17 +68,16 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         base.OnBlockPlaced(byItemStack);
         waterManager?.RegisterScrewBlock(Pos);
         waterManager?.RegisterLoadedController(this);
+        InvalidateAssemblyAnalysisCache();
+        nextCentralWaterTickDueMs = 0;
+        UpdateCentralTickRegistration();
         Log("Block placed at {0}: {1}", Pos, Block?.Code);
     }
 
     public override void OnBlockRemoved()
     {
         Log("Block removed at {0}: {1}", Pos, Block?.Code);
-        if (tickListenerId != 0)
-        {
-            UnregisterGameTickListener(tickListenerId);
-            tickListenerId = 0;
-        }
+        waterManager?.UnregisterFromCentralWaterTick(ControllerId);
         ReleaseAllManagedWater("block removed");
         waterManager?.UnregisterScrewBlock(Pos);
         waterManager?.RemoveControllerSnapshot(ControllerId);
@@ -83,13 +87,75 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
     public override void OnBlockUnloaded()
     {
         Log("Block unloaded at {0}", Pos);
-        if (tickListenerId != 0)
-        {
-            UnregisterGameTickListener(tickListenerId);
-            tickListenerId = 0;
-        }
+        waterManager?.UnregisterFromCentralWaterTick(ControllerId);
         waterManager?.UnregisterLoadedController(ControllerId);
         base.OnBlockUnloaded();
+    }
+
+    public void InvalidateAssemblyAnalysisCache()
+    {
+        cachedAssemblyAnalysis = null;
+        assemblyAnalysisCachedAtMs = long.MinValue;
+    }
+
+    internal bool IsCentralWaterTickDue(long nowMs)
+    {
+        return nowMs >= nextCentralWaterTickDueMs;
+    }
+
+    internal void RunCentralWaterTick()
+    {
+        OnWaterControllerTick();
+    }
+
+    private void UpdateCentralTickRegistration()
+    {
+        if (Api?.Side != EnumAppSide.Server || waterManager == null)
+        {
+            return;
+        }
+
+        if (Block is BlockWaterArchimedesScrew s && s.IsIntakeBlock())
+        {
+            waterManager.RegisterForCentralWaterTick(this);
+        }
+        else
+        {
+            waterManager.UnregisterFromCentralWaterTick(ControllerId);
+        }
+    }
+
+    private void ScheduleNextWaterTick(ArchimedesScrewControllerSchedule schedule, int fastMs, int idleMs)
+    {
+        lastWaterSchedule = schedule;
+        int interval = schedule == ArchimedesScrewControllerSchedule.HighCadence ? fastMs : idleMs;
+        nextCentralWaterTickDueMs = Environment.TickCount64 + Math.Max(1, interval);
+    }
+
+    private ArchimedesScrewAssemblyAnalyzer.AssemblyStatus GetOrRefreshAssemblyAnalysis()
+    {
+        if (Api == null || waterConfig == null)
+        {
+            return new ArchimedesScrewAssemblyAnalyzer.AssemblyStatus
+            {
+                IsAssemblyValid = false,
+                IsFunctional = false,
+                Message = "controller not initialized"
+            };
+        }
+
+        long now = Environment.TickCount64;
+        int ttl = Math.Max(0, waterConfig.AssemblyAnalysisCacheMs);
+        if (cachedAssemblyAnalysis != null && now - assemblyAnalysisCachedAtMs < ttl)
+        {
+            return cachedAssemblyAnalysis;
+        }
+
+        ArchimedesScrewAssemblyAnalyzer.AssemblyStatus fresh =
+            ArchimedesScrewAssemblyAnalyzer.Analyze(Api.World, Pos, waterConfig.MinimumNetworkSpeed);
+        cachedAssemblyAnalysis = fresh;
+        assemblyAnalysisCachedAtMs = now;
+        return fresh;
     }
 
     public void NotifyManagedWaterRemoved(BlockPos pos)
@@ -128,6 +194,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         lastSeedPos = null;
         lastLoggedSeedKey = null;
         lastLoggedSourceSummary = null;
+        InvalidateAssemblyAnalysisCache();
         MarkDirty();
         Log("Cleared owned source state after purge");
     }
@@ -219,12 +286,15 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         }
     }
 
-    private void OnTick(float dt)
+    private void OnWaterControllerTick()
     {
         if (Api == null || Api.Side != EnumAppSide.Server || waterManager == null || waterConfig == null)
         {
             return;
         }
+
+        int fastMs = waterConfig.FastTickMs;
+        int idleMs = waterConfig.IdleTickMs;
 
         ControllerEvaluation evaluation = EvaluateController();
         LogStateChange("controller validity", ref lastLoggedControllerState, evaluation.IsController);
@@ -235,7 +305,10 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             wasController = false;
             AdoptAllConnectedSources();
             int removed = DrainUnsupportedSources(Array.Empty<BlockPos>(), Array.Empty<string>(), evaluation.FailureReason);
-            EnsureTickListener(ownedPositions.Count > 0 || removed > 0 ? waterConfig.FastTickMs : waterConfig.IdleTickMs);
+            ArchimedesScrewControllerSchedule schedule = ownedPositions.Count > 0 || removed > 0
+                ? ArchimedesScrewControllerSchedule.HighCadence
+                : ArchimedesScrewControllerSchedule.LowCadence;
+            ScheduleNextWaterTick(schedule, fastMs, idleMs);
             return;
         }
 
@@ -245,7 +318,10 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         {
             AdoptAllConnectedSources();
             int removed = DrainUnsupportedSources(Array.Empty<BlockPos>(), Array.Empty<string>(), evaluation.FailureReason);
-            EnsureTickListener(ownedPositions.Count > 0 || removed > 0 ? waterConfig.FastTickMs : waterConfig.IdleTickMs);
+            ArchimedesScrewControllerSchedule schedule = ownedPositions.Count > 0 || removed > 0
+                ? ArchimedesScrewControllerSchedule.HighCadence
+                : ArchimedesScrewControllerSchedule.LowCadence;
+            ScheduleNextWaterTick(schedule, fastMs, idleMs);
             return;
         }
 
@@ -277,16 +353,20 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             UpdateSnapshot();
         }
 
-        bool shouldFastTick = ensuredSeed || convertedSources > 0 || removedDisconnected > 0 || adoptedSources > 0 || ownedPositions.Count == 0;
-        EnsureTickListener(shouldFastTick ? waterConfig.FastTickMs : waterConfig.IdleTickMs);
+        bool busyWork = ensuredSeed || convertedSources > 0 || removedDisconnected > 0 || adoptedSources > 0 || ownedPositions.Count == 0;
+        ArchimedesScrewControllerSchedule nextSchedule = busyWork
+            ? ArchimedesScrewControllerSchedule.HighCadence
+            : ArchimedesScrewControllerSchedule.LowCadence;
+        ScheduleNextWaterTick(nextSchedule, fastMs, idleMs);
 
+        int nextMs = nextSchedule == ArchimedesScrewControllerSchedule.HighCadence ? fastMs : idleMs;
         string sourceSummary =
-            $"seed={seedPos};connectedWater={connectedWater.Count};ownedSources={ownedPositions.Count};supportingSeeds={supportingSeeds.Count};convertedSources={convertedSources};adoptedSources={adoptedSources};removedDisconnected={removedDisconnected};nextIntervalMs={(shouldFastTick ? waterConfig.FastTickMs : waterConfig.IdleTickMs)}";
+            $"seed={seedPos};connectedWater={connectedWater.Count};ownedSources={ownedPositions.Count};supportingSeeds={supportingSeeds.Count};convertedSources={convertedSources};adoptedSources={adoptedSources};removedDisconnected={removedDisconnected};schedule={nextSchedule};nextIntervalMs={nextMs}";
         if (!string.Equals(lastLoggedSourceSummary, sourceSummary, StringComparison.Ordinal))
         {
             lastLoggedSourceSummary = sourceSummary;
             Log(
-                "Source tick at {0}: connectedWater={1}, ownedSources={2}, supportingSeeds={3}, convertedSources={4}, adoptedSources={5}, removedDisconnected={6}, nextIntervalMs={7}",
+                "Source tick at {0}: connectedWater={1}, ownedSources={2}, supportingSeeds={3}, convertedSources={4}, adoptedSources={5}, removedDisconnected={6}, schedule={7}, nextIntervalMs={8}",
                 seedPos,
                 connectedWater.Count,
                 ownedPositions.Count,
@@ -294,7 +374,8 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
                 convertedSources,
                 adoptedSources,
                 removedDisconnected,
-                shouldFastTick ? waterConfig.FastTickMs : waterConfig.IdleTickMs
+                nextSchedule,
+                nextMs
             );
         }
     }
@@ -312,7 +393,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             return new ControllerEvaluation(false, false, "block is not an intake controller", null, null);
         }
 
-        ArchimedesScrewAssemblyAnalyzer.AssemblyStatus assemblyStatus = ArchimedesScrewAssemblyAnalyzer.Analyze(Api.World, Pos, waterConfig.MinimumNetworkSpeed);
+        ArchimedesScrewAssemblyAnalyzer.AssemblyStatus assemblyStatus = GetOrRefreshAssemblyAnalysis();
         if (!assemblyStatus.IsAssemblyValid)
         {
             return new ControllerEvaluation(false, false, $"assembly invalid: {assemblyStatus.Message}", null, assemblyStatus.OutputPos?.Copy());
@@ -547,28 +628,6 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         }
 
         return top;
-    }
-
-    private void EnsureTickListener(int intervalMs)
-    {
-        if (Api == null)
-        {
-            return;
-        }
-
-        if (tickListenerId != 0 && currentIntervalMs == intervalMs)
-        {
-            return;
-        }
-
-        if (tickListenerId != 0)
-        {
-            UnregisterGameTickListener(tickListenerId);
-        }
-
-        currentIntervalMs = intervalMs;
-        tickListenerId = RegisterGameTickListener(OnTick, intervalMs);
-        Log("Registered tick listener at {0} ms", intervalMs);
     }
 
     private void Log(string message, params object?[] args)

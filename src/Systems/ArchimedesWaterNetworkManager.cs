@@ -9,7 +9,7 @@ using Vintagestory.API.Util;
 
 namespace ArchimedesScrew;
 
-public sealed class ArchimedesWaterNetworkManager
+public sealed class ArchimedesWaterNetworkManager : IDisposable
 {
     private const string SaveKeyScrewBlocks = "archimedes_screw/screwblocks";
     private const string SaveKeyControllerPositions = "archimedes_screw/controllerpositions";
@@ -28,10 +28,114 @@ public sealed class ArchimedesWaterNetworkManager
     private readonly ConcurrentDictionary<string, byte> suppressedRemovalNotifications = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Block> managedBlockCache = new(StringComparer.Ordinal);
 
+    private readonly Dictionary<string, WeakReference<BlockEntityWaterArchimedesScrew>> centralWaterTickControllers = new(StringComparer.Ordinal);
+    private readonly List<string> centralWaterTickOrder = new();
+    private int centralWaterTickCursor;
+    private long globalWaterTickListenerId;
+
     public ArchimedesWaterNetworkManager(ICoreServerAPI api, ArchimedesScrewConfig config)
     {
         this.api = api;
         this.config = config;
+    }
+
+    public void Dispose()
+    {
+        StopCentralWaterTick();
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>Registers the single server tick that runs intake water logic (staggered, budgeted).</summary>
+    public void StartCentralWaterTick()
+    {
+        StopCentralWaterTick();
+        int interval = Math.Max(5, config.Water.GlobalTickMs);
+        globalWaterTickListenerId = api.Event.RegisterGameTickListener(OnGlobalWaterTick, interval);
+    }
+
+    public void StopCentralWaterTick()
+    {
+        if (globalWaterTickListenerId != 0)
+        {
+            api.Event.UnregisterGameTickListener(globalWaterTickListenerId);
+            globalWaterTickListenerId = 0;
+        }
+    }
+
+    public void RegisterForCentralWaterTick(BlockEntityWaterArchimedesScrew controller)
+    {
+        string id = controller.ControllerId;
+        centralWaterTickControllers[id] = new WeakReference<BlockEntityWaterArchimedesScrew>(controller);
+        if (!centralWaterTickOrder.Contains(id))
+        {
+            centralWaterTickOrder.Add(id);
+        }
+    }
+
+    public void UnregisterFromCentralWaterTick(string controllerId)
+    {
+        centralWaterTickControllers.Remove(controllerId);
+        centralWaterTickOrder.RemoveAll(s => string.Equals(s, controllerId, StringComparison.Ordinal));
+    }
+
+    private void OnGlobalWaterTick(float dt)
+    {
+        CompactCentralWaterTickList();
+
+        long now = Environment.TickCount64;
+        int budget = Math.Max(1, config.Water.MaxControllersPerGlobalTick);
+        int n = centralWaterTickOrder.Count;
+        if (n == 0)
+        {
+            return;
+        }
+
+        int processed = 0;
+        for (int step = 0; step < n; step++)
+        {
+            if (processed >= budget)
+            {
+                break;
+            }
+
+            int idx = (centralWaterTickCursor + step) % n;
+            string id = centralWaterTickOrder[idx];
+
+            if (!centralWaterTickControllers.TryGetValue(id, out WeakReference<BlockEntityWaterArchimedesScrew>? wr) ||
+                !wr.TryGetTarget(out BlockEntityWaterArchimedesScrew? be))
+            {
+                continue;
+            }
+
+            if (!be.IsCentralWaterTickDue(now))
+            {
+                continue;
+            }
+
+            be.RunCentralWaterTick();
+            processed++;
+        }
+
+        centralWaterTickCursor = (centralWaterTickCursor + 1) % n;
+    }
+
+    private void CompactCentralWaterTickList()
+    {
+        for (int i = centralWaterTickOrder.Count - 1; i >= 0; i--)
+        {
+            string id = centralWaterTickOrder[i];
+            if (!centralWaterTickControllers.TryGetValue(id, out WeakReference<BlockEntityWaterArchimedesScrew>? wr) ||
+                !wr.TryGetTarget(out _))
+            {
+                centralWaterTickOrder.RemoveAt(i);
+                centralWaterTickControllers.Remove(id);
+            }
+        }
+
+        if (centralWaterTickCursor >= centralWaterTickOrder.Count && centralWaterTickOrder.Count > 0)
+        {
+            centralWaterTickCursor %= centralWaterTickOrder.Count;
+        }
     }
 
     public void Load()
@@ -136,6 +240,7 @@ public sealed class ArchimedesWaterNetworkManager
         controllerPosById.Remove(controllerId);
         controllerOwnedById.Remove(controllerId);
         loadedControllers.Remove(controllerId);
+        UnregisterFromCentralWaterTick(controllerId);
     }
 
     public void RegisterScrewBlock(BlockPos pos)

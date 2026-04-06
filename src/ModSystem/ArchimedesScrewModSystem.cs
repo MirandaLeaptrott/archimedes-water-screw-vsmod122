@@ -43,10 +43,13 @@ public sealed class ArchimedesScrewModSystem : ModSystem
         {
             Config = JsonConvert.DeserializeObject<ArchimedesScrewConfig>(asset.ToText()) ?? new ArchimedesScrewConfig();
             api.Logger.Notification(
-                "{0} Loaded config: fastTickMs={1}, idleTickMs={2}, maxBlocksPerStep={3}, maxScrewLength={4}, minNetworkSpeed={5}, maxVanillaConversionPasses={6}",
+                "{0} Loaded config: fastTickMs={1}, idleTickMs={2}, globalTickMs={3}, maxControllersPerGlobalTick={4}, assemblyAnalysisCacheMs={5}, maxBlocksPerStep={6}, maxScrewLength={7}, minNetworkSpeed={8}, maxVanillaConversionPasses={9}",
                 LogPrefix,
                 Config.Water.FastTickMs,
                 Config.Water.IdleTickMs,
+                Config.Water.GlobalTickMs,
+                Config.Water.MaxControllersPerGlobalTick,
+                Config.Water.AssemblyAnalysisCacheMs,
                 Config.Water.MaxBlocksPerStep,
                 Config.Water.MaxScrewLength,
                 Config.Water.MinimumNetworkSpeed,
@@ -64,7 +67,8 @@ public sealed class ArchimedesScrewModSystem : ModSystem
     {
         sapi = api;
         WaterManager = new ArchimedesWaterNetworkManager(api, Config);
-        api.Logger.Notification("{0} Server side initialized", LogPrefix);
+        WaterManager.StartCentralWaterTick();
+        api.Logger.Notification("{0} Server side initialized (central water tick)", LogPrefix);
 
         api.Event.SaveGameLoaded += OnSaveGameLoaded;
         api.Event.GameWorldSave += OnGameWorldSave;
@@ -80,6 +84,7 @@ public sealed class ArchimedesScrewModSystem : ModSystem
             sapi.Event.GameWorldSave -= OnGameWorldSave;
         }
 
+        WaterManager?.Dispose();
         WaterManager = null;
         base.Dispose();
     }

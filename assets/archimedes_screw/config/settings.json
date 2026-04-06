@@ -2,6 +2,9 @@
   "water": {
     "fastTickMs": 250,
     "idleTickMs": 2000,
+    "globalTickMs": 50,
+    "maxControllersPerGlobalTick": 48,
+    "assemblyAnalysisCacheMs": 120,
     "maxBlocksPerStep": 1,
     "maxScrewLength": 32,
     "minimumNetworkSpeed": 0.001,
