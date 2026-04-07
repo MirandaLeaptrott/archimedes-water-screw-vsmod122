@@ -27,3 +27,17 @@ Copy the table and add a **Result** column, or note pass/fail and build version 
 | **A2** | Determinism check: repeat **A1** twice with identical layout and placement order (after `/archscrew purge`). | The **same controller** wins assignment both times for the same source location. |
 | **A3** | Tie-break check: place two candidate outlets as symmetrically as possible around one new converted source. Repeat a few times. | Assignment remains stable and repeatable (no random flipping between controllers). |
 | **A4** | Create a connected network where controller X owns multiple sources, then invalidate X (break intake or remove power long enough). | X-owned source nodes are reassigned to the nearest **active valid** controller where possible; if none exists, those sources are drained by cleanup. |
+
+## Relay behavior (compact)
+
+Use one powered intake/outlet stack and one long, mostly horizontal aqueduct line.
+
+| ID | What to do | What you should see |
+|----|------------|---------------------|
+| **R1** | Enable relays. Set `relayStrideBlocks=14`, `maxRelaySourcesPerController=8`, `requiredMechPowerForMaxRelay=0.02`. Run at **minimum functional power** (just above `minimumNetworkSpeed`). | **0 relays** are created; only the normal seed source exists. |
+| **R2** | Increase power gradually from minimum to high. Observe relay count over ~30-60s. | Relay count increases stepwise with power, never exceeding `maxRelaySourcesPerController`. |
+| **R3** | Hover power around a threshold (small up/down changes) with non-zero `relayPowerHysteresisPct` (e.g. 0.05). | Relay count does **not** rapidly oscillate every tick (hysteresis effect). |
+| **R4** | Build candidate cells that violate one rule at a time: not lowest flowing, liquid below, air below, no cardinal adjacent air. | No relay is created on invalid candidates; creation only occurs when **all** rules are satisfied. |
+| **R5** | Force over-cap condition by reducing `maxRelaySourcesPerController` below current relay count. | Relays are trimmed down to cap over subsequent ticks; seed source remains intact. |
+| **R6** | Disable controller power or invalidate assembly, then re-enable. | Relay-owned sources drain/cleanup when invalid, and can be recreated when valid again; no orphan relay ownership remains. |
+| **R7** | Two nearby active controllers with connected managed water; trigger relay opportunities near boundary. | A relay source is never captured by the wrong owner once owned; no cross-controller thrash. |

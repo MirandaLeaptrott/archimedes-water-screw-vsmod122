@@ -40,6 +40,41 @@ public sealed class ArchimedesScrewConfig
         public int MaxVanillaConversionPasses { get; set; } = 32;
 
         /// <summary>
+        /// Enables/disables relay source creation for long-distance aqueduct support.
+        /// </summary>
+        public bool EnableRelaySources { get; set; } = true;
+
+        /// <summary>
+        /// Desired spacing in blocks between relay source opportunities along connected flow.
+        /// </summary>
+        public int RelayStrideBlocks { get; set; } = 14;
+
+        /// <summary>
+        /// Max relay source promotions (and trims) per controller tick.
+        /// </summary>
+        public int MaxRelayPromotionsPerTick { get; set; } = 1;
+
+        /// <summary>
+        /// Absolute max relay-created sources one controller may own at full power.
+        /// </summary>
+        public int MaxRelaySourcesPerController { get; set; } = 8;
+
+        /// <summary>
+        /// Mechanical power needed to unlock full relay cap.
+        /// </summary>
+        public float RequiredMechPowerForMaxRelay { get; set; } = 0.02f;
+
+        /// <summary>
+        /// Fractional hysteresis around relay-cap transitions to avoid add/remove thrash.
+        /// </summary>
+        public float RelayPowerHysteresisPct { get; set; } = 0.05f;
+
+        /// <summary>
+        /// Enables verbose per-controller diagnostics on right-click status checks.
+        /// </summary>
+        public bool DebugControllerStatsOnInteract { get; set; } = false;
+
+        /// <summary>
         /// Copies tunable fields onto this instance so existing references (e.g. block entities) stay valid.
         /// </summary>
         public void CopyValuesFrom(WaterConfig source)
@@ -53,6 +88,13 @@ public sealed class ArchimedesScrewConfig
             MaxScrewLength = source.MaxScrewLength;
             MinimumNetworkSpeed = source.MinimumNetworkSpeed;
             MaxVanillaConversionPasses = source.MaxVanillaConversionPasses;
+            EnableRelaySources = source.EnableRelaySources;
+            RelayStrideBlocks = source.RelayStrideBlocks;
+            MaxRelayPromotionsPerTick = source.MaxRelayPromotionsPerTick;
+            MaxRelaySourcesPerController = source.MaxRelaySourcesPerController;
+            RequiredMechPowerForMaxRelay = source.RequiredMechPowerForMaxRelay;
+            RelayPowerHysteresisPct = source.RelayPowerHysteresisPct;
+            DebugControllerStatsOnInteract = source.DebugControllerStatsOnInteract;
         }
     }
 }

@@ -403,6 +403,18 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
                string.Equals(block.Variant?["height"], "7", StringComparison.Ordinal);
     }
 
+    public bool IsArchimedesLowestFlowingBlock(Block block)
+    {
+        return IsArchimedesWaterBlock(block) &&
+               !string.Equals(block.Variant?["flow"], "still", StringComparison.Ordinal) &&
+               string.Equals(block.Variant?["height"], "1", StringComparison.Ordinal);
+    }
+
+    public bool TryGetSourceOwner(BlockPos pos, out string ownerId)
+    {
+        return sourceOwnerByPos.TryGetValue(PosKey(pos), out ownerId!);
+    }
+
     public bool TryResolveVanillaWaterFamily(Block block, out string familyId)
     {
         if (ArchimedesWaterFamilies.TryResolveVanillaFamily(block, out ArchimedesWaterFamily family))

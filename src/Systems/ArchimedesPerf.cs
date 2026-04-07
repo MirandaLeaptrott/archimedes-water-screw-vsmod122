@@ -13,7 +13,7 @@ namespace ArchimedesScrew;
 public static class ArchimedesPerf
 {
     // Set true while profiling.
-    public static bool Enabled = true;
+    public static bool Enabled = false;
 
     public static int FlushIntervalMs = 5000;
     public static int MaxLoggedMetrics = 48;

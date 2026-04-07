@@ -8,6 +8,13 @@
     "maxBlocksPerStep": 1,
     "maxScrewLength": 32,
     "minimumNetworkSpeed": 0.001,
-    "maxVanillaConversionPasses": 32
+    "maxVanillaConversionPasses": 32,
+    "enableRelaySources": true,
+    "relayStrideBlocks": 7,
+    "maxRelayPromotionsPerTick": 1,
+    "maxRelaySourcesPerController": 8,
+    "requiredMechPowerForMaxRelay": 0.02,
+    "relayPowerHysteresisPct": 0.05,
+    "debugControllerStatsOnInteract": false
   }
 }

@@ -10,12 +10,23 @@
         "water/assemblyAnalysisCacheMs": "ASSEMBLY_ANALYSIS_CACHE_MS",
         "water/maxBlocksPerStep": "MAX_BLOCKS_PER_STEP",
         "water/maxScrewLength": "MAX_SCREW_LENGTH",
-        "water/maxVanillaConversionPasses": "MAX_VANILLA_CONVERSION_PASSES"
+        "water/maxVanillaConversionPasses": "MAX_VANILLA_CONVERSION_PASSES",
+        "water/relayStrideBlocks": "RELAY_STRIDE_BLOCKS",
+        "water/maxRelayPromotionsPerTick": "MAX_RELAY_PROMOTIONS_PER_TICK",
+        "water/maxRelaySourcesPerController": "MAX_RELAY_SOURCES_PER_CONTROLLER"
+      }
+    },
+    "boolean": {
+      "archimedes_screw:config/settings.json": {
+        "water/enableRelaySources": "ENABLE_RELAY_SOURCES",
+        "water/debugControllerStatsOnInteract": "DEBUG_CONTROLLER_STATS_ON_INTERACT"
       }
     },
     "float": {
       "archimedes_screw:config/settings.json": {
-        "water/minimumNetworkSpeed": "MINIMUM_NETWORK_SPEED"
+        "water/minimumNetworkSpeed": "MINIMUM_NETWORK_SPEED",
+        "water/requiredMechPowerForMaxRelay": "REQUIRED_MECH_POWER_FOR_MAX_RELAY",
+        "water/relayPowerHysteresisPct": "RELAY_POWER_HYSTERESIS_PCT"
       }
     }
   },
@@ -116,6 +127,58 @@
           "max": 256,
           "step": 1
         }
+      },
+      "RELAY_STRIDE_BLOCKS": {
+        "name": "relay-stride-blocks",
+        "ingui": "archimedes_screw:config-relay-stride-blocks",
+        "weight": 4.6,
+        "comment": "Desired spacing between relay source opportunities along connected managed flow.",
+        "default": 14,
+        "range": {
+          "min": 2,
+          "max": 64,
+          "step": 1
+        }
+      },
+      "MAX_RELAY_PROMOTIONS_PER_TICK": {
+        "name": "max-relay-promotions-per-tick",
+        "ingui": "archimedes_screw:config-max-relay-promotions-per-tick",
+        "weight": 4.7,
+        "comment": "Maximum relay source creations/removals per controller tick.",
+        "default": 1,
+        "range": {
+          "min": 1,
+          "max": 32,
+          "step": 1
+        }
+      },
+      "MAX_RELAY_SOURCES_PER_CONTROLLER": {
+        "name": "max-relay-sources-per-controller",
+        "ingui": "archimedes_screw:config-max-relay-sources-per-controller",
+        "weight": 4.8,
+        "comment": "Upper bound of relay-created sources a controller may own at full power.",
+        "default": 8,
+        "range": {
+          "min": 0,
+          "max": 256,
+          "step": 1
+        }
+      }
+    },
+    "boolean": {
+      "ENABLE_RELAY_SOURCES": {
+        "name": "enable-relay-sources",
+        "ingui": "archimedes_screw:config-enable-relay-sources",
+        "weight": 4.55,
+        "comment": "Enable relay source creation logic for long aqueducts.",
+        "default": true
+      },
+      "DEBUG_CONTROLLER_STATS_ON_INTERACT": {
+        "name": "debug-controller-stats-on-interact",
+        "ingui": "archimedes_screw:config-debug-controller-stats-on-interact",
+        "weight": 5.9,
+        "comment": "If enabled, right-clicking an intake controller logs detailed controller stats to server console.",
+        "default": false
       }
     },
     "float": {
@@ -129,6 +192,30 @@
           "min": 0.0001,
           "max": 1.0,
           "step": 0.0001
+        }
+      },
+      "REQUIRED_MECH_POWER_FOR_MAX_RELAY": {
+        "name": "required-mech-power-for-max-relay",
+        "ingui": "archimedes_screw:config-required-mech-power-for-max-relay",
+        "weight": 5.1,
+        "comment": "Mechanical power needed to unlock full relay source cap.",
+        "default": 0.02,
+        "range": {
+          "min": 0.001,
+          "max": 1.0,
+          "step": 0.001
+        }
+      },
+      "RELAY_POWER_HYSTERESIS_PCT": {
+        "name": "relay-power-hysteresis-pct",
+        "ingui": "archimedes_screw:config-relay-power-hysteresis-pct",
+        "weight": 5.2,
+        "comment": "Fractional hysteresis around relay cap thresholds to prevent source thrash.",
+        "default": 0.05,
+        "range": {
+          "min": 0.0,
+          "max": 0.5,
+          "step": 0.01
         }
       }
     }

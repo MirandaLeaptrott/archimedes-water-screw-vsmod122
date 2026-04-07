@@ -27,6 +27,8 @@ public sealed class ArchimedesScrewModSystem : ModSystem
     private ICoreServerAPI? sapi;
     private EventBusListenerDelegate? configLibConfigSavedHandler;
     private EventBusListenerDelegate? configLibSettingChangedHandler;
+    private ArchimedesScrewConfig.WaterConfig? pendingWaterConfig;
+    private bool pendingRequiresCentralTickRestart;
 
     public ArchimedesScrewConfig Config { get; private set; } = new();
 
@@ -80,7 +82,7 @@ public sealed class ArchimedesScrewModSystem : ModSystem
     {
         ArchimedesScrewConfig.WaterConfig w = config.Water;
         api.Logger.Notification(
-            "{0} Effective config: fastTickMs={1}, idleTickMs={2}, globalTickMs={3}, maxControllersPerGlobalTick={4}, assemblyAnalysisCacheMs={5}, maxBlocksPerStep={6}, maxScrewLength={7}, minNetworkSpeed={8}, maxVanillaConversionPasses={9}",
+            "{0} Effective config: fastTickMs={1}, idleTickMs={2}, globalTickMs={3}, maxControllersPerGlobalTick={4}, assemblyAnalysisCacheMs={5}, maxBlocksPerStep={6}, maxScrewLength={7}, minNetworkSpeed={8}, maxVanillaConversionPasses={9}, enableRelaySources={10}, relayStrideBlocks={11}, maxRelayPromotionsPerTick={12}, maxRelaySourcesPerController={13}, requiredMechPowerForMaxRelay={14}, relayPowerHysteresisPct={15}, debugControllerStatsOnInteract={16}",
             LogPrefix,
             w.FastTickMs,
             w.IdleTickMs,
@@ -90,7 +92,14 @@ public sealed class ArchimedesScrewModSystem : ModSystem
             w.MaxBlocksPerStep,
             w.MaxScrewLength,
             w.MinimumNetworkSpeed,
-            w.MaxVanillaConversionPasses
+            w.MaxVanillaConversionPasses,
+            w.EnableRelaySources,
+            w.RelayStrideBlocks,
+            w.MaxRelayPromotionsPerTick,
+            w.MaxRelaySourcesPerController,
+            w.RequiredMechPowerForMaxRelay,
+            w.RelayPowerHysteresisPct,
+            w.DebugControllerStatsOnInteract
         );
     }
 
@@ -110,7 +119,6 @@ public sealed class ArchimedesScrewModSystem : ModSystem
         api.Event.RegisterEventBusListener(configLibConfigSavedHandler, filterByEventName: ConfigLibSavedEventName);
         configLibSettingChangedHandler = OnConfigLibSettingChanged;
         api.Event.RegisterEventBusListener(configLibSettingChangedHandler, filterByEventName: ConfigLibSettingChangedEventName);
-        api.Event.RegisterEventBusListener(OnConfigLibReloadRequested, filterByEventName: ConfigLibReloadEventName);
 
         RegisterCommands(api);
     }
@@ -225,31 +233,23 @@ public sealed class ArchimedesScrewModSystem : ModSystem
             return;
         }
 
-        ICoreServerAPI serverApi = sapi;
-        serverApi.Event.RegisterCallback(
-            _ =>
-            {
-                try
-                {
-                    ApplyLiveReloadFromPatchedConfigAsset(serverApi);
-                }
-                catch (Exception ex)
-                {
-                    serverApi.Logger.Error("{0} Live config reload failed: {1}", LogPrefix, ex);
-                }
-            },
-            50);
-    }
-
-    private void OnConfigLibReloadRequested(string eventName, ref EnumHandling handling, IAttribute data)
-    {
-        if (sapi == null)
+        if (pendingWaterConfig == null)
         {
+            sapi.Logger.Notification("{0} Config Lib save detected; no pending runtime changes.", LogPrefix);
             return;
         }
 
-        // Config lib emits a global reload event; re-read our patched asset.
-        sapi.Event.RegisterCallback(_ => ApplyLiveReloadFromPatchedConfigAsset(sapi), 50);
+        Config.Water.CopyValuesFrom(pendingWaterConfig);
+        pendingWaterConfig = null;
+
+        if (pendingRequiresCentralTickRestart)
+        {
+            WaterManager?.RestartCentralWaterTickForCurrentConfig();
+            pendingRequiresCentralTickRestart = false;
+        }
+
+        sapi.Logger.Notification("{0} Applied pending Config Lib settings on save", LogPrefix);
+        LogEffectiveConfig(sapi, Config);
     }
 
     private void OnConfigLibSettingChanged(string eventName, ref EnumHandling handling, IAttribute data)
@@ -260,90 +260,90 @@ public sealed class ArchimedesScrewModSystem : ModSystem
         }
 
         string settingCode = tree.GetAsString("setting");
-        bool changed = false;
-
-        switch (settingCode)
-        {
-            case "FAST_TICK_MS":
-                Config.Water.FastTickMs = tree.GetInt("value");
-                changed = true;
-                break;
-            case "IDLE_TICK_MS":
-                Config.Water.IdleTickMs = tree.GetInt("value");
-                changed = true;
-                break;
-            case "GLOBAL_TICK_MS":
-                Config.Water.GlobalTickMs = tree.GetInt("value");
-                changed = true;
-                break;
-            case "MAX_CONTROLLERS_PER_GLOBAL_TICK":
-                Config.Water.MaxControllersPerGlobalTick = tree.GetInt("value");
-                changed = true;
-                break;
-            case "ASSEMBLY_ANALYSIS_CACHE_MS":
-                Config.Water.AssemblyAnalysisCacheMs = tree.GetInt("value");
-                changed = true;
-                break;
-            case "MAX_BLOCKS_PER_STEP":
-                Config.Water.MaxBlocksPerStep = tree.GetInt("value");
-                changed = true;
-                break;
-            case "MAX_SCREW_LENGTH":
-                Config.Water.MaxScrewLength = tree.GetInt("value");
-                changed = true;
-                break;
-            case "MAX_VANILLA_CONVERSION_PASSES":
-                Config.Water.MaxVanillaConversionPasses = tree.GetInt("value");
-                changed = true;
-                break;
-            case "MINIMUM_NETWORK_SPEED":
-                Config.Water.MinimumNetworkSpeed = tree.GetFloat("value");
-                changed = true;
-                break;
-        }
+        pendingWaterConfig ??= CloneWaterConfig(Config.Water);
+        bool changed = TryApplySetting(pendingWaterConfig, settingCode, tree, out bool requiresCentralTickRestart);
 
         if (!changed)
         {
             return;
         }
 
-        if (settingCode is "GLOBAL_TICK_MS" or "MAX_CONTROLLERS_PER_GLOBAL_TICK")
+        if (requiresCentralTickRestart)
         {
-            WaterManager?.RestartCentralWaterTickForCurrentConfig();
+            pendingRequiresCentralTickRestart = true;
         }
 
-        sapi.Logger.Notification("{0} Live setting applied from Config Lib: {1}", LogPrefix, settingCode);
-        LogEffectiveConfig(sapi, Config);
+        sapi.Logger.Notification("{0} Queued Config Lib setting (applies on save): {1}", LogPrefix, settingCode);
     }
 
-    private void ApplyLiveReloadFromPatchedConfigAsset(ICoreServerAPI api)
+    private static ArchimedesScrewConfig.WaterConfig CloneWaterConfig(ArchimedesScrewConfig.WaterConfig source)
     {
-        IAsset? asset = api.Assets.TryGet(new AssetLocation(ModId, ConfigAssetPath));
-        if (asset == null)
-        {
-            api.Logger.Warning("{0} Live config reload skipped: missing asset {1}", LogPrefix, ConfigAssetPath);
-            return;
-        }
+        var clone = new ArchimedesScrewConfig.WaterConfig();
+        clone.CopyValuesFrom(source);
+        return clone;
+    }
 
-        ArchimedesScrewConfig? fresh;
-        try
+    private static bool TryApplySetting(
+        ArchimedesScrewConfig.WaterConfig target,
+        string settingCode,
+        TreeAttribute tree,
+        out bool requiresCentralTickRestart)
+    {
+        requiresCentralTickRestart = false;
+        switch (settingCode)
         {
-            fresh = JsonConvert.DeserializeObject<ArchimedesScrewConfig>(asset.ToText());
+            case "FAST_TICK_MS":
+                target.FastTickMs = tree.GetInt("value");
+                return true;
+            case "IDLE_TICK_MS":
+                target.IdleTickMs = tree.GetInt("value");
+                return true;
+            case "GLOBAL_TICK_MS":
+                target.GlobalTickMs = tree.GetInt("value");
+                requiresCentralTickRestart = true;
+                return true;
+            case "MAX_CONTROLLERS_PER_GLOBAL_TICK":
+                target.MaxControllersPerGlobalTick = tree.GetInt("value");
+                requiresCentralTickRestart = true;
+                return true;
+            case "ASSEMBLY_ANALYSIS_CACHE_MS":
+                target.AssemblyAnalysisCacheMs = tree.GetInt("value");
+                return true;
+            case "MAX_BLOCKS_PER_STEP":
+                target.MaxBlocksPerStep = tree.GetInt("value");
+                return true;
+            case "MAX_SCREW_LENGTH":
+                target.MaxScrewLength = tree.GetInt("value");
+                return true;
+            case "MAX_VANILLA_CONVERSION_PASSES":
+                target.MaxVanillaConversionPasses = tree.GetInt("value");
+                return true;
+            case "ENABLE_RELAY_SOURCES":
+                target.EnableRelaySources = tree.GetBool("value");
+                return true;
+            case "RELAY_STRIDE_BLOCKS":
+                target.RelayStrideBlocks = tree.GetInt("value");
+                return true;
+            case "MAX_RELAY_PROMOTIONS_PER_TICK":
+                target.MaxRelayPromotionsPerTick = tree.GetInt("value");
+                return true;
+            case "MAX_RELAY_SOURCES_PER_CONTROLLER":
+                target.MaxRelaySourcesPerController = tree.GetInt("value");
+                return true;
+            case "REQUIRED_MECH_POWER_FOR_MAX_RELAY":
+                target.RequiredMechPowerForMaxRelay = tree.GetFloat("value");
+                return true;
+            case "RELAY_POWER_HYSTERESIS_PCT":
+                target.RelayPowerHysteresisPct = tree.GetFloat("value");
+                return true;
+            case "MINIMUM_NETWORK_SPEED":
+                target.MinimumNetworkSpeed = tree.GetFloat("value");
+                return true;
+            case "DEBUG_CONTROLLER_STATS_ON_INTERACT":
+                target.DebugControllerStatsOnInteract = tree.GetBool("value");
+                return true;
+            default:
+                return false;
         }
-        catch (JsonException ex)
-        {
-            api.Logger.Error("{0} Live config reload: bad JSON in {1}: {2}", LogPrefix, ConfigAssetPath, ex);
-            return;
-        }
-
-        if (fresh == null)
-        {
-            return;
-        }
-
-        Config.Water.CopyValuesFrom(fresh.Water);
-        WaterManager?.RestartCentralWaterTickForCurrentConfig();
-        LogEffectiveConfig(api, Config);
-        api.Logger.Notification("{0} Applied live config reload (Config Lib)", LogPrefix);
     }
 }
