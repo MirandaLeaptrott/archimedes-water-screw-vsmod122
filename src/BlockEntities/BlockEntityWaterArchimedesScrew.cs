@@ -391,9 +391,14 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         lastSeedPos = seedPos.Copy();
 
         bool ensuredSeed = EnsureSeedSource(seedPos, familyId);
+        int convertedVanilla = waterManager.ConvertAdjacentVanillaSourcesIteratively(
+            seedPos,
+            waterConfig.MaxVanillaConversionPasses
+        );
 
         bool canSkipConnectivityScan =
             lastScheduledCadence == ArchimedesScrewControllerSchedule.LowCadence &&
+            convertedVanilla == 0 &&
             !ensuredSeed &&
             lowCadenceScanSkipsRemaining > 0;
 
@@ -430,7 +435,13 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             UpdateSnapshot();
         }
 
-        bool busyWork = ensuredSeed || removedDisconnected > 0 || relayCreated > 0 || relayTrimmed > 0 || ownedPositions.Count == 0;
+        bool busyWork =
+            ensuredSeed ||
+            convertedVanilla > 0 ||
+            removedDisconnected > 0 ||
+            relayCreated > 0 ||
+            relayTrimmed > 0 ||
+            ownedPositions.Count == 0;
         ArchimedesScrewControllerSchedule nextSchedule = busyWork
             ? ArchimedesScrewControllerSchedule.HighCadence
             : ArchimedesScrewControllerSchedule.LowCadence;
