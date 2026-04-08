@@ -246,7 +246,7 @@ public sealed class ArchimedesScrewModSystem : ModSystem
             .WithDescription("Administrative commands for the Archimedes Screw mod.")
             .RequiresPrivilege(Privilege.controlserver)
             .BeginSubCommand("purge")
-                .WithDescription("Remove all Archimedes screw blocks and managed water.")
+                .WithDescription("Remove all Archimedes screw blocks and all known Archimedes water.")
                 .HandleWith(_ =>
                 {
                     int removed = WaterManager?.PurgeAll() ?? 0;
@@ -255,12 +255,12 @@ public sealed class ArchimedesScrewModSystem : ModSystem
                 })
             .EndSubCommand()
             .BeginSubCommand("purgewater")
-                .WithDescription("Remove all managed Archimedes water blocks.")
+                .WithDescription("Remove all known Archimedes water blocks.")
                 .HandleWith(_ =>
                 {
                     int removed = WaterManager?.PurgeManagedWater() ?? 0;
-                    api.Logger.Notification("{0} Command purgewater removed {1} managed water blocks", LogPrefix, removed);
-                    return TextCommandResult.Success($"Removed {removed} managed water blocks.");
+                    api.Logger.Notification("{0} Command purgewater removed {1} Archimedes water blocks", LogPrefix, removed);
+                    return TextCommandResult.Success($"Removed {removed} Archimedes water blocks.");
                 })
             .EndSubCommand()
             .BeginSubCommand("purgescrews")

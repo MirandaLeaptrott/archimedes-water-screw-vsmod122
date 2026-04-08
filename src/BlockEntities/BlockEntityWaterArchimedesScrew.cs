@@ -24,6 +24,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
     /// Skipping <see cref="DrainUnsupportedSources"/> briefly prevents false "disconnected" releases of valid relays.
     /// </summary>
     private const int PostLoadDrainUnsupportedGraceMs = 12000;
+    private const int TopologyChangeDrainUnsupportedGraceMs = 4000;
 
     private readonly Dictionary<string, BlockPos> ownedPositions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, BlockPos> relayOwnedPositions = new(StringComparer.Ordinal);
@@ -94,7 +95,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
     public override void OnBlockPlaced(ItemStack? byItemStack = null)
     {
         base.OnBlockPlaced(byItemStack);
-        drainUnsupportedGraceUntilMs = 0;
+        ArmDrainUnsupportedGrace(TopologyChangeDrainUnsupportedGraceMs);
         waterManager?.RegisterScrewBlock(Pos);
         waterManager?.RegisterLoadedController(this);
         InvalidateAssemblyAnalysisCache();
@@ -425,6 +426,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
 
         if (!evaluation.IsController)
         {
+            TryArmTopologyChangeGrace(evaluation.FailureReason);
             wasController = false;
             int removed = DrainUnsupportedSources(
                 Array.Empty<ArchimedesOutletState>(),
@@ -446,6 +448,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
 
         if (!evaluation.IsPowered || evaluation.FamilyId == null || evaluation.SeedPos == null)
         {
+            TryArmTopologyChangeGrace(evaluation.FailureReason);
             int removed = DrainUnsupportedSources(
                 Array.Empty<ArchimedesOutletState>(),
                 EmptyKeySet,
@@ -883,7 +886,14 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             BlockPos adjacentPos = pos.AddCopy(face);
             Block adjacentSolid = Api.World.BlockAccessor.GetBlock(adjacentPos);
             Block adjacentFluid = Api.World.BlockAccessor.GetBlock(adjacentPos, BlockLayersAccess.Fluid);
-            if (adjacentSolid.Id == 0 && adjacentFluid.Id == 0)
+            bool isAirCell = adjacentSolid.Id == 0 && adjacentFluid.Id == 0;
+            bool isIntake = adjacentSolid is BlockWaterArchimedesScrew screw && screw.IsIntakeBlock();
+            AssetLocation? adjacentCode = adjacentSolid.Code;
+            bool isTallgrass = adjacentCode != null &&
+                               string.Equals(adjacentCode.Domain, "game", StringComparison.Ordinal) &&
+                               adjacentCode.Path.StartsWith("tallgrass-", StringComparison.Ordinal);
+            bool isWhitelisted = isIntake || isTallgrass;
+            if (isAirCell || isWhitelisted)
             {
                 return true;
             }
@@ -1140,6 +1150,18 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             return 0;
         }
 
+        if (Environment.TickCount64 < drainUnsupportedGraceUntilMs)
+        {
+            return 0;
+        }
+
+        // No owned/seed context means this controller cannot safely attribute nearby unowned
+        // managed sources to itself; skipping prevents cross-controller delete loops.
+        if (ownedPositions.Count == 0 && lastSeedPos == null)
+        {
+            return 0;
+        }
+
         List<BlockPos> anchors = new();
         if (lastSeedPos != null)
         {
@@ -1226,6 +1248,34 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             $"{ArchimedesScrewModSystem.LogPrefix} [controller:{ControllerId}] {message}",
             args
         );
+    }
+
+    private void TryArmTopologyChangeGrace(string failureReason)
+    {
+        if (string.IsNullOrWhiteSpace(failureReason))
+        {
+            return;
+        }
+
+        // Structural/transient assembly failures can flap while streams settle around a newly
+        // placed intake. Briefly pausing drain/cleanup avoids create-delete loops.
+        if (!failureReason.StartsWith("assembly invalid:", StringComparison.Ordinal) &&
+            !failureReason.StartsWith("seed/output position ", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ArmDrainUnsupportedGrace(TopologyChangeDrainUnsupportedGraceMs);
+    }
+
+    private void ArmDrainUnsupportedGrace(int durationMs)
+    {
+        long now = Environment.TickCount64;
+        long until = now + Math.Max(0, durationMs);
+        if (until > drainUnsupportedGraceUntilMs)
+        {
+            drainUnsupportedGraceUntilMs = until;
+        }
     }
 
     private void LogStateChange(string name, ref bool? lastValue, bool value)

@@ -91,6 +91,22 @@
     "*-end-outlet-*": {
       "all": true
     },
+    "*-ported-north": {
+      "all": true,
+      "north": false
+    },
+    "*-ported-east": {
+      "all": true,
+      "east": false
+    },
+    "*-ported-south": {
+      "all": true,
+      "south": false
+    },
+    "*-ported-west": {
+      "all": true,
+      "west": false
+    },
     "*": {
       "all": false
     }

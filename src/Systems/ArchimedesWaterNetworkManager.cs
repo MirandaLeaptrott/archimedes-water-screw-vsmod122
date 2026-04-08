@@ -16,11 +16,13 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
     private const string SaveKeyControllerOwned = "archimedes_screw/controllerowned";
 
     private const int MaxBfsVisited = 4096;
+    private const int UnownedCleanupRetryCooldownMs = 3000;
 
     private readonly ICoreServerAPI api;
     private readonly ArchimedesScrewConfig config;
 
     private readonly Dictionary<string, string> sourceOwnerByPos = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> unownedCleanupCooldownUntilMsByKey = new(StringComparer.Ordinal);
     private readonly HashSet<string> screwBlockKeys = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> controllerPosById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int[]> controllerOwnedById = new(StringComparer.Ordinal);
@@ -290,6 +292,7 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         controllerPosById.Clear();
         controllerOwnedById.Clear();
         sourceOwnerByPos.Clear();
+        unownedCleanupCooldownUntilMsByKey.Clear();
 
         int droppedScrewKeys = 0;
         List<string> screwKeySamples = new();
@@ -1088,17 +1091,26 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
 
                 if (sourceOwnerByPos.ContainsKey(key))
                 {
+                    unownedCleanupCooldownUntilMsByKey.Remove(key);
+                    continue;
+                }
+
+                long nowMs = Environment.TickCount64;
+                if (unownedCleanupCooldownUntilMsByKey.TryGetValue(key, out long retryAtMs) && nowMs < retryAtMs)
+                {
                     continue;
                 }
 
                 Block fluid = api.World.BlockAccessor.GetBlock(pos, BlockLayersAccess.Fluid);
                 if (!IsArchimedesSourceBlock(fluid))
                 {
+                    unownedCleanupCooldownUntilMsByKey.Remove(key);
                     continue;
                 }
 
                 SuppressRemovalNotification(key);
                 RemoveFluidAndNotifyNeighbours(pos);
+                unownedCleanupCooldownUntilMsByKey[key] = nowMs + UnownedCleanupRetryCooldownMs;
                 removed++;
             }
         }
@@ -1325,7 +1337,7 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
 
     public int PurgeManagedWater()
     {
-        HashSet<string> anchorKeys = BuildManagedWaterAnchorKeys();
+        HashSet<string> anchorKeys = BuildAllArchimedesWaterAnchorKeys();
 
         foreach (WeakReference<BlockEntityWaterArchimedesScrew> pair in loadedControllers.Values)
         {
@@ -1390,13 +1402,14 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         }
 
         sourceOwnerByPos.Clear();
+        unownedCleanupCooldownUntilMsByKey.Clear();
         controllerOwnedById.Clear();
 
         LogSkippedInvalidPosKeys("PurgeManagedWater", skippedInvalidKeys, invalidSamples);
 
         int total = converted + removed;
         api.Logger.Notification(
-            "{0} PurgeManagedWater replaced {1} managed blocks (convertedToVanilla={2}, removed={3})",
+            "{0} PurgeManagedWater replaced {1} Archimedes water blocks (convertedToVanilla={2}, removed={3})",
             ArchimedesScrewModSystem.LogPrefix,
             total,
             converted,
@@ -1906,6 +1919,28 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         return anchorKeys;
     }
 
+    private HashSet<string> BuildAllArchimedesWaterAnchorKeys()
+    {
+        HashSet<string> anchorKeys = BuildManagedWaterAnchorKeys();
+
+        foreach (string key in screwBlockKeys)
+        {
+            anchorKeys.Add(key);
+        }
+
+        foreach (string key in controllerPosById.Values)
+        {
+            anchorKeys.Add(key);
+        }
+
+        foreach (string key in sourceOwnerByPos.Keys)
+        {
+            anchorKeys.Add(key);
+        }
+
+        return anchorKeys;
+    }
+
     private void TryCollectManagedComponent(BlockPos pos, HashSet<string> allWaterKeys)
     {
         string posKey = PosKey(pos);
@@ -2043,6 +2078,7 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
 
         return controller.IsTrackingSource(pos);
     }
+
 }
 
 public readonly record struct ManagedSourceDebugInfo(

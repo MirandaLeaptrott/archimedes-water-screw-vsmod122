@@ -6,7 +6,7 @@ namespace ArchimedesScrew;
 
 internal static class ArchimedesWaterBlockHelper
 {
-    public static void NotifyManagerOnRemoval(IWorldAccessor world, BlockPos pos)
+    public static void NotifyManagerOnRemoval(IWorldAccessor world, BlockPos pos, Block removedBlock)
     {
         if (world.Side != EnumAppSide.Server)
         {
@@ -15,6 +15,17 @@ internal static class ArchimedesWaterBlockHelper
 
         ArchimedesWaterNetworkManager? manager = world.Api.ModLoader.GetModSystem<ArchimedesScrewModSystem>().WaterManager;
         if (manager == null)
+        {
+            return;
+        }
+
+        Block replacementFluid = world.BlockAccessor.GetBlock(pos, BlockLayersAccess.Fluid);
+        // Keep ownership stable across managed variant transitions (e.g. still-7 -> still-6).
+        // The old block is "removed" by fluid simulation, but this is not true source loss.
+        if (manager.IsArchimedesWaterBlock(replacementFluid) &&
+            manager.TryResolveManagedWaterFamily(removedBlock, out string removedFamilyId) &&
+            manager.TryResolveManagedWaterFamily(replacementFluid, out string replacementFamilyId) &&
+            string.Equals(removedFamilyId, replacementFamilyId, StringComparison.Ordinal))
         {
             return;
         }
@@ -64,7 +75,7 @@ public sealed class BlockArchimedesWaterStill : BlockWater
     public override void OnBlockRemoved(IWorldAccessor world, BlockPos pos)
     {
         base.OnBlockRemoved(world, pos);
-        ArchimedesWaterBlockHelper.NotifyManagerOnRemoval(world, pos);
+        ArchimedesWaterBlockHelper.NotifyManagerOnRemoval(world, pos, this);
     }
 }
 
@@ -79,7 +90,7 @@ public sealed class BlockArchimedesWaterFlowing : BlockWaterflowing
     public override void OnBlockRemoved(IWorldAccessor world, BlockPos pos)
     {
         base.OnBlockRemoved(world, pos);
-        ArchimedesWaterBlockHelper.NotifyManagerOnRemoval(world, pos);
+        ArchimedesWaterBlockHelper.NotifyManagerOnRemoval(world, pos, this);
     }
 }
 
@@ -94,6 +105,6 @@ public sealed class BlockArchimedesWaterfall : BlockWaterfall
     public override void OnBlockRemoved(IWorldAccessor world, BlockPos pos)
     {
         base.OnBlockRemoved(world, pos);
-        ArchimedesWaterBlockHelper.NotifyManagerOnRemoval(world, pos);
+        ArchimedesWaterBlockHelper.NotifyManagerOnRemoval(world, pos, this);
     }
 }
