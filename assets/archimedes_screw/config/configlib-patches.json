@@ -135,7 +135,7 @@
         "ingui": "archimedes_screw:config-relay-stride-blocks",
         "weight": 4.6,
         "comment": "Desired spacing between relay source opportunities along connected managed flow.",
-        "default": 14,
+        "default": 6,
         "range": {
           "min": 2,
           "max": 64,
@@ -159,7 +159,7 @@
         "ingui": "archimedes_screw:config-max-relay-sources-per-controller",
         "weight": 4.8,
         "comment": "Upper bound of relay-created sources a controller may own at full power.",
-        "default": 8,
+        "default": 12,
         "range": {
           "min": 0,
           "max": 256,
@@ -215,7 +215,7 @@
         "ingui": "archimedes_screw:config-required-mech-power-for-max-relay",
         "weight": 5.1,
         "comment": "Mechanical power needed to unlock full relay source cap.",
-        "default": 0.02,
+        "default": 0.5,
         "range": {
           "min": 0.001,
           "max": 1.0,

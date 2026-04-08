@@ -818,9 +818,23 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             return;
         }
 
+        int removedInvalidKeys = 0;
+        List<string> invalidSamples = new();
         foreach (string key in relayOwnedPositions.Keys.ToList())
         {
-            BlockPos pos = ParsePosKey(key);
+            if (!ArchimedesWaterNetworkManager.TryParsePosKey(key, out BlockPos pos))
+            {
+                relayOwnedPositions.Remove(key);
+                removedInvalidKeys++;
+                if (invalidSamples.Count < 3)
+                {
+                    const int maxLen = 80;
+                    invalidSamples.Add(key.Length <= maxLen ? key : key.Substring(0, maxLen) + "...");
+                }
+
+                continue;
+            }
+
             Block fluid = Api.World.BlockAccessor.GetBlock(pos, BlockLayersAccess.Fluid);
             // Keep relay markers stable across temporary source/flow transitions.
             // Remove only when the position is no longer owned by this controller
@@ -829,6 +843,17 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             {
                 relayOwnedPositions.Remove(key);
             }
+        }
+
+        if (removedInvalidKeys > 0)
+        {
+            string sampleText = invalidSamples.Count > 0 ? string.Join(", ", invalidSamples) : "—";
+            Api.Logger.Warning(
+                "{0} [controller:{1}] ReconcileRelayOwnedPositions removed {2} entr(y/ies) with invalid position key(s). Sample(s): {3}",
+                ArchimedesScrewModSystem.LogPrefix,
+                ControllerId,
+                removedInvalidKeys,
+                sampleText);
         }
     }
 
@@ -1065,20 +1090,6 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         }
 
         return new BlockPos(values[0], values[1], values[2]);
-    }
-
-    private static BlockPos ParsePosKey(string key)
-    {
-        string[] parts = key.Split(',');
-        if (parts.Length < 3 ||
-            !int.TryParse(parts[0], out int x) ||
-            !int.TryParse(parts[1], out int y) ||
-            !int.TryParse(parts[2], out int z))
-        {
-            throw new FormatException($"Invalid position key format: '{key}'");
-        }
-
-        return new BlockPos(x, y, z);
     }
 
     private readonly record struct ControllerEvaluation(

@@ -47,7 +47,7 @@ public sealed class ArchimedesScrewConfig
         /// <summary>
         /// Desired spacing in blocks between relay source opportunities along connected flow.
         /// </summary>
-        public int RelayStrideBlocks { get; set; } = 14;
+        public int RelayStrideBlocks { get; set; } = 6;
 
         /// <summary>
         /// Max relay source promotions (and trims) per controller tick.
@@ -57,12 +57,12 @@ public sealed class ArchimedesScrewConfig
         /// <summary>
         /// Absolute max relay-created sources one controller may own at full power.
         /// </summary>
-        public int MaxRelaySourcesPerController { get; set; } = 8;
+        public int MaxRelaySourcesPerController { get; set; } = 12;
 
         /// <summary>
         /// Mechanical power needed to unlock full relay cap.
         /// </summary>
-        public float RequiredMechPowerForMaxRelay { get; set; } = 0.02f;
+        public float RequiredMechPowerForMaxRelay { get; set; } = 0.5f;
 
         /// <summary>
         /// Fractional hysteresis around relay-cap transitions to avoid add/remove thrash.

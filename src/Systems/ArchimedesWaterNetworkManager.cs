@@ -133,16 +133,30 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
     {
         HashSet<string> anchors = BuildManagedWaterAnchorKeys();
         HashSet<string> allWaterKeys = new(StringComparer.Ordinal);
+        int skippedInvalidKeys = 0;
+        List<string> invalidSamples = new();
         foreach (string key in anchors)
         {
-            BlockPos pos = ParsePosKey(key);
+            if (!TryParsePosKey(key, out BlockPos pos))
+            {
+                skippedInvalidKeys++;
+                AddInvalidPosKeySample(invalidSamples, key);
+                continue;
+            }
+
             CollectManagedComponentKeysAroundAnchor(pos, allWaterKeys);
         }
 
         int touched = 0;
         foreach (string key in allWaterKeys)
         {
-            BlockPos pos = ParsePosKey(key);
+            if (!TryParsePosKey(key, out BlockPos pos))
+            {
+                skippedInvalidKeys++;
+                AddInvalidPosKeySample(invalidSamples, key);
+                continue;
+            }
+
             Block fluid = api.World.BlockAccessor.GetBlock(pos, BlockLayersAccess.Fluid);
             if (!IsArchimedesWaterBlock(fluid))
             {
@@ -152,6 +166,8 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
             TriggerLiquidUpdates(pos, fluid);
             touched++;
         }
+
+        LogSkippedInvalidPosKeys("ReactivateManagedFluidsFromTrackedAnchors", skippedInvalidKeys, invalidSamples);
 
         api.Logger.Notification(
             "{0} Post-load managed fluid reactivation pass touched={1} (anchors={2})",
@@ -271,27 +287,65 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         controllerOwnedById.Clear();
         sourceOwnerByPos.Clear();
 
+        int droppedScrewKeys = 0;
+        List<string> screwKeySamples = new();
         string[]? screwKeys = LoadSerialized<string[]>(SaveKeyScrewBlocks);
         if (screwKeys != null)
         {
             foreach (string key in screwKeys)
             {
-                screwBlockKeys.Add(key);
+                if (TryParsePosKey(key, out _))
+                {
+                    screwBlockKeys.Add(key);
+                }
+                else
+                {
+                    droppedScrewKeys++;
+                    AddInvalidPosKeySample(screwKeySamples, key);
+                }
             }
         }
 
+        int droppedControllerPositions = 0;
+        List<string> controllerPosSamples = new();
         Dictionary<string, string>? controllerPositions = LoadSerialized<Dictionary<string, string>>(SaveKeyControllerPositions);
         if (controllerPositions != null)
         {
             foreach ((string id, string posKey) in controllerPositions)
             {
-                controllerPosById[id] = posKey;
+                if (TryParsePosKey(posKey, out _))
+                {
+                    controllerPosById[id] = posKey;
+                }
+                else
+                {
+                    droppedControllerPositions++;
+                    AddInvalidPosKeySample(controllerPosSamples, posKey);
+                }
             }
         }
 
         Dictionary<string, int[]>? ownedSources = LoadSerialized<Dictionary<string, int[]>>(SaveKeyControllerOwned);
         if (ownedSources == null)
         {
+            if (droppedScrewKeys > 0 || droppedControllerPositions > 0)
+            {
+                api.Logger.Warning(
+                    "{0} Load: dropped {1} invalid screw key(s) and {2} invalid controller position entr(y/ies) from save. Screw sample(s): {3}; controller sample(s): {4}",
+                    ArchimedesScrewModSystem.LogPrefix,
+                    droppedScrewKeys,
+                    droppedControllerPositions,
+                    screwKeySamples.Count > 0 ? string.Join(", ", screwKeySamples) : "—",
+                    controllerPosSamples.Count > 0 ? string.Join(", ", controllerPosSamples) : "—");
+            }
+
+            api.Logger.Notification(
+                "{0} Loaded water manager state: screws={1}, controllers={2}, trackedSources={3}",
+                ArchimedesScrewModSystem.LogPrefix,
+                screwBlockKeys.Count,
+                controllerPosById.Count,
+                sourceOwnerByPos.Count
+            );
             return;
         }
 
@@ -319,6 +373,17 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
                     sourceOwnerByPos[key] = controllerId;
                 }
             }
+        }
+
+        if (droppedScrewKeys > 0 || droppedControllerPositions > 0)
+        {
+            api.Logger.Warning(
+                "{0} Load: dropped {1} invalid screw key(s) and {2} invalid controller position entr(y/ies) from save. Screw sample(s): {3}; controller sample(s): {4}",
+                ArchimedesScrewModSystem.LogPrefix,
+                droppedScrewKeys,
+                droppedControllerPositions,
+                screwKeySamples.Count > 0 ? string.Join(", ", screwKeySamples) : "—",
+                controllerPosSamples.Count > 0 ? string.Join(", ", controllerPosSamples) : "—");
         }
 
         api.Logger.Notification(
@@ -723,6 +788,8 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
             }
         }
 
+        int skippedInvalidKeys = 0;
+        List<string> invalidSamples = new();
         foreach ((string key, string ownerId) in sourceOwnerByPos)
         {
             if (!string.Equals(ownerId, controllerId, StringComparison.Ordinal) || !keys.Add(key))
@@ -730,8 +797,17 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
                 continue;
             }
 
-            result.Add(ParsePosKey(key));
+            if (!TryParsePosKey(key, out BlockPos pos))
+            {
+                skippedInvalidKeys++;
+                AddInvalidPosKeySample(invalidSamples, key);
+                continue;
+            }
+
+            result.Add(pos.Copy());
         }
+
+        LogSkippedInvalidPosKeys("GetOwnedSourcePositionsForController", skippedInvalidKeys, invalidSamples);
 
         return result;
     }
@@ -993,9 +1069,17 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         }
 
         HashSet<string> allWaterKeys = new(StringComparer.Ordinal);
+        int skippedInvalidKeys = 0;
+        List<string> invalidSamples = new();
         foreach (string key in anchorKeys)
         {
-            BlockPos pos = ParsePosKey(key);
+            if (!TryParsePosKey(key, out BlockPos pos))
+            {
+                skippedInvalidKeys++;
+                AddInvalidPosKeySample(invalidSamples, key);
+                continue;
+            }
+
             CollectManagedComponentKeysAroundAnchor(pos, allWaterKeys);
         }
 
@@ -1004,7 +1088,13 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         List<BlockPos> removedPositions = new();
         foreach (string key in allWaterKeys)
         {
-            BlockPos pos = ParsePosKey(key);
+            if (!TryParsePosKey(key, out BlockPos pos))
+            {
+                skippedInvalidKeys++;
+                AddInvalidPosKeySample(invalidSamples, key);
+                continue;
+            }
+
             Block block = api.World.BlockAccessor.GetBlock(pos, BlockLayersAccess.Fluid);
             if (!IsArchimedesWaterBlock(block))
             {
@@ -1035,6 +1125,8 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         sourceOwnerByPos.Clear();
         controllerOwnedById.Clear();
 
+        LogSkippedInvalidPosKeys("PurgeManagedWater", skippedInvalidKeys, invalidSamples);
+
         int total = converted + removed;
         api.Logger.Notification(
             "{0} PurgeManagedWater replaced {1} managed blocks (convertedToVanilla={2}, removed={3})",
@@ -1057,9 +1149,17 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         }
 
         int removed = 0;
+        int skippedInvalidKeys = 0;
+        List<string> invalidSamples = new();
         foreach (string key in screwBlockKeys.ToArray())
         {
-            BlockPos pos = ParsePosKey(key);
+            if (!TryParsePosKey(key, out BlockPos pos))
+            {
+                skippedInvalidKeys++;
+                AddInvalidPosKeySample(invalidSamples, key);
+                continue;
+            }
+
             Block block = api.World.BlockAccessor.GetBlock(pos);
             if (block is not BlockWaterArchimedesScrew)
             {
@@ -1069,6 +1169,8 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
             api.World.BlockAccessor.SetBlock(0, pos);
             removed++;
         }
+
+        LogSkippedInvalidPosKeys("PurgeScrewsOnly", skippedInvalidKeys, invalidSamples);
 
         screwBlockKeys.Clear();
         controllerPosById.Clear();
@@ -1125,6 +1227,63 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
     public static string PosKey(BlockPos pos)
     {
         return $"{pos.X},{pos.Y},{pos.Z}";
+    }
+
+    /// <summary>
+    /// Inverse of <see cref="PosKey"/>: exactly three comma-separated integers (no extra segments).
+    /// </summary>
+    public static bool TryParsePosKey(string? key, out BlockPos pos)
+    {
+        pos = new BlockPos(0, 0, 0);
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        string[] parts = key.Split(',');
+        if (parts.Length != 3 ||
+            !int.TryParse(parts[0], out int x) ||
+            !int.TryParse(parts[1], out int y) ||
+            !int.TryParse(parts[2], out int z))
+        {
+            return false;
+        }
+
+        pos = new BlockPos(x, y, z);
+        return true;
+    }
+
+    private static void AddInvalidPosKeySample(List<string> samples, string? key)
+    {
+        if (samples.Count >= 3)
+        {
+            return;
+        }
+
+        if (key == null)
+        {
+            samples.Add("(null)");
+            return;
+        }
+
+        const int maxLen = 80;
+        samples.Add(key.Length <= maxLen ? key : key.Substring(0, maxLen) + "...");
+    }
+
+    private void LogSkippedInvalidPosKeys(string operation, int skipped, List<string> samples)
+    {
+        if (skipped <= 0)
+        {
+            return;
+        }
+
+        string sampleText = samples.Count > 0 ? string.Join(", ", samples) : "—";
+        api.Logger.Warning(
+            "{0} {1}: skipped {2} invalid position key(s). Sample(s): {3}",
+            ArchimedesScrewModSystem.LogPrefix,
+            operation,
+            skipped,
+            sampleText);
     }
 
     private bool IsVanillaSourceBlock(Block block)
@@ -1518,20 +1677,6 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
 
         vanillaBlock = resolved;
         return true;
-    }
-
-    private static BlockPos ParsePosKey(string key)
-    {
-        string[] parts = key.Split(',');
-        if (parts.Length < 3 ||
-            !int.TryParse(parts[0], out int x) ||
-            !int.TryParse(parts[1], out int y) ||
-            !int.TryParse(parts[2], out int z))
-        {
-            throw new FormatException($"Invalid position key format: '{key}'");
-        }
-
-        return new BlockPos(x, y, z);
     }
 
     private static int[] EncodePositions(IReadOnlyCollection<BlockPos> positions)
