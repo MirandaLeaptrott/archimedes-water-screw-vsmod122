@@ -98,7 +98,7 @@ public static class ArchimedesPerf
             double totalMs = metric.TotalTicks * tickToMs;
             double avgMs = metric.Calls > 0 ? totalMs / metric.Calls : 0;
             double maxMs = metric.MaxTicks * tickToMs;
-            api.Logger.Notification(
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
                 "{0} [perf/{1}s] {2}: calls={3}, totalMs={4:0.###}, avgMs={5:0.###}, maxMs={6:0.###}, count={7}",
                 ArchimedesScrewModSystem.LogPrefix,
                 Math.Max(1, FlushIntervalMs / 1000),
@@ -117,7 +117,7 @@ public static class ArchimedesPerf
         if (cacheTotal > 0)
         {
             double hitRate = 100.0 * cacheHits / cacheTotal;
-            api.Logger.Notification(
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
                 "{0} [perf/{1}s] water.collectConnectedManagedCached.hitRate: hits={2}, misses={3}, hitRate={4:0.##}%",
                 ArchimedesScrewModSystem.LogPrefix,
                 Math.Max(1, FlushIntervalMs / 1000),

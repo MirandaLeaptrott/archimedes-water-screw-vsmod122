@@ -25,7 +25,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
     {
         if (!CanPlaceBlock(world, byPlayer, blockSel, ref failureCode))
         {
-            api.Logger.Notification(
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
                 "{0} Placement blocked for {1} at {2}: CanPlaceBlock failed with code '{3}'",
                 ArchimedesScrewModSystem.LogPrefix,
                 Code,
@@ -45,7 +45,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
         {
             failureCode = "archimedes-screw-requires-water";
             Block currentFluid = world.BlockAccessor.GetBlock(blockSel.Position, BlockLayersAccess.Fluid);
-            api.Logger.Notification(
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
                 "{0} Intake placement rejected at {1}: fluid={2}, flow={3}, height={4}",
                 ArchimedesScrewModSystem.LogPrefix,
                 blockSel.Position,
@@ -70,7 +70,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
                 continue;
             }
 
-            api.Logger.Notification(
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
                 "{0} Placed {1} at {2} and connected to mechanical block at {3} via {4}",
                 ArchimedesScrewModSystem.LogPrefix,
                 blockToPlace.Code,
@@ -86,7 +86,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
         if (blockToPlace.CanPlaceBlock(world, byPlayer, blockSel, ref failureCode) &&
             blockToPlace.DoPlaceBlock(world, byPlayer, blockSel, itemstack))
         {
-            api.Logger.Notification(
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
                 "{0} Placed {1} at {2} without an immediate mechanical connection",
                 ArchimedesScrewModSystem.LogPrefix,
                 blockToPlace.Code,
@@ -96,7 +96,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
             return true;
         }
 
-        api.Logger.Notification(
+        ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
             "{0} Placement ultimately failed for {1} at {2} with code '{3}'",
             ArchimedesScrewModSystem.LogPrefix,
             Code,
@@ -125,7 +125,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
         {
             string outletVariant = "end-outlet-" + facing.Code;
             BlockWaterArchimedesScrew? outlet = ResolveMainScrewVariantBlock(outletVariant);
-            api.Logger.Notification(
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
                 "{0} End-cap as outlet: variant {1} at {2}",
                 ArchimedesScrewModSystem.LogPrefix,
                 outletVariant,
@@ -138,7 +138,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
         {
             string intakeVariant = "ported-" + facing.Code;
             BlockWaterArchimedesScrew? intake = ResolveMainScrewVariantBlock(intakeVariant);
-            api.Logger.Notification(
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
                 "{0} End-cap as intake: variant {1} at {2}",
                 ArchimedesScrewModSystem.LogPrefix,
                 intakeVariant,
@@ -148,7 +148,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
         }
 
         failureCode = "archimedes-screw-endcap-context";
-        api.Logger.Notification(
+        ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger,
             "{0} End-cap placement rejected at {1}: need vanilla water here, or place on a straight screw or intake below",
             ArchimedesScrewModSystem.LogPrefix,
             placePos
@@ -234,7 +234,7 @@ public sealed class BlockWaterArchimedesScrew : BlockMPBase
             }
         }
 
-        api.Logger.Notification("{0} Status check at {1}: {2}", ArchimedesScrewModSystem.LogPrefix, blockSel.Position, message);
+        ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger, "{0} Status check at {1}: {2}", ArchimedesScrewModSystem.LogPrefix, blockSel.Position, message);
         return true;
     }
 

@@ -21,7 +21,8 @@
         "water/enableRelaySources": "ENABLE_RELAY_SOURCES",
         "water/debugControllerStatsOnInteract": "DEBUG_CONTROLLER_STATS_ON_INTERACT",
         "water/enableWaterfallCompat": "ENABLE_WATERFALL_COMPAT",
-        "water/waterfallCompatDebug": "WATERFALL_COMPAT_DEBUG"
+        "water/waterfallCompatDebug": "WATERFALL_COMPAT_DEBUG",
+        "water/verboseDebug": "VERBOSE_DEBUG"
       }
     },
     "float": {
@@ -194,6 +195,13 @@
         "ingui": "archimedes_screw:config-waterfall-compat-debug",
         "weight": 6.1,
         "comment": "Verbose logging for Waterfall compatibility hook decisions.",
+        "default": false
+      },
+      "VERBOSE_DEBUG": {
+        "name": "verbose-debug",
+        "ingui": "archimedes_screw:config-verbose-debug",
+        "weight": 6.2,
+        "comment": "When enabled, non-essential Archimedes diagnostics are emitted as [VerboseDebug] entries.",
         "default": false
       }
     },

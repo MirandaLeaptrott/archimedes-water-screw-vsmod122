@@ -17,6 +17,7 @@
     "relayPowerHysteresisPct": 0.05,
     "debugControllerStatsOnInteract": false,
     "enableWaterfallCompat": true,
-    "waterfallCompatDebug": false
+    "waterfallCompatDebug": false,
+    "verboseDebug": false
   }
 }

@@ -85,6 +85,11 @@ public sealed class ArchimedesScrewConfig
         public bool WaterfallCompatDebug { get; set; } = false;
 
         /// <summary>
+        /// Routes non-essential mod diagnostics to verbose debug log entries.
+        /// </summary>
+        public bool VerboseDebug { get; set; } = false;
+
+        /// <summary>
         /// Copies tunable fields onto this instance so existing references (e.g. block entities) stay valid.
         /// </summary>
         public void CopyValuesFrom(WaterConfig source)
@@ -107,6 +112,7 @@ public sealed class ArchimedesScrewConfig
             DebugControllerStatsOnInteract = source.DebugControllerStatsOnInteract;
             EnableWaterfallCompat = source.EnableWaterfallCompat;
             WaterfallCompatDebug = source.WaterfallCompatDebug;
+            VerboseDebug = source.VerboseDebug;
         }
     }
 }

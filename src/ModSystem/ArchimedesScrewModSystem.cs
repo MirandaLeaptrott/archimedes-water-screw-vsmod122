@@ -42,6 +42,7 @@ public sealed class ArchimedesScrewModSystem : ModSystem
 
     private const string NetworkChannelName = ModId;
     private const int WaterDebugRadius = 32;
+    public static bool VerboseDebugEnabled { get; private set; }
 
     public ArchimedesScrewConfig Config { get; private set; } = new();
 
@@ -76,6 +77,7 @@ public sealed class ArchimedesScrewModSystem : ModSystem
         try
         {
             Config = JsonConvert.DeserializeObject<ArchimedesScrewConfig>(asset.ToText()) ?? new ArchimedesScrewConfig();
+            VerboseDebugEnabled = Config.Water.VerboseDebug;
             LogEffectiveConfig(api, Config);
             api.Logger.Notification(
                 "{0} Loaded {1} (with Config Lib: edit ModConfig/{2}.yaml or in-game; without Config Lib: edit mod asset defaults only)",
@@ -95,7 +97,7 @@ public sealed class ArchimedesScrewModSystem : ModSystem
     {
         ArchimedesScrewConfig.WaterConfig w = config.Water;
         api.Logger.Notification(
-            "{0} Effective config: fastTickMs={1}, idleTickMs={2}, globalTickMs={3}, maxControllersPerGlobalTick={4}, assemblyAnalysisCacheMs={5}, maxBlocksPerStep={6}, maxScrewLength={7}, minNetworkSpeed={8}, maxVanillaConversionPasses={9}, enableRelaySources={10}, relayStrideBlocks={11}, maxRelayPromotionsPerTick={12}, maxRelaySourcesPerController={13}, requiredMechPowerForMaxRelay={14}, relayPowerHysteresisPct={15}, debugControllerStatsOnInteract={16}, enableWaterfallCompat={17}, waterfallCompatDebug={18}",
+            "{0} Effective config: fastTickMs={1}, idleTickMs={2}, globalTickMs={3}, maxControllersPerGlobalTick={4}, assemblyAnalysisCacheMs={5}, maxBlocksPerStep={6}, maxScrewLength={7}, minNetworkSpeed={8}, maxVanillaConversionPasses={9}, enableRelaySources={10}, relayStrideBlocks={11}, maxRelayPromotionsPerTick={12}, maxRelaySourcesPerController={13}, requiredMechPowerForMaxRelay={14}, relayPowerHysteresisPct={15}, debugControllerStatsOnInteract={16}, enableWaterfallCompat={17}, waterfallCompatDebug={18}, verboseDebug={19}",
             LogPrefix,
             w.FastTickMs,
             w.IdleTickMs,
@@ -114,8 +116,35 @@ public sealed class ArchimedesScrewModSystem : ModSystem
             w.RelayPowerHysteresisPct,
             w.DebugControllerStatsOnInteract,
             w.EnableWaterfallCompat,
-            w.WaterfallCompatDebug
+            w.WaterfallCompatDebug,
+            w.VerboseDebug
         );
+    }
+
+    public static void LogVerbose(ILogger? logger, string message, params object?[] args)
+    {
+        if (logger == null || !VerboseDebugEnabled)
+        {
+            return;
+        }
+
+        logger.Event("[VerboseDebug] " + message, args);
+    }
+
+    public static void LogVerboseOrNotification(ILogger? logger, string message, params object?[] args)
+    {
+        if (logger == null)
+        {
+            return;
+        }
+
+        if (VerboseDebugEnabled)
+        {
+            logger.Event("[VerboseDebug] " + message, args);
+            return;
+        }
+
+        logger.Notification(message, args);
     }
 
     public override void StartServerSide(ICoreServerAPI api)
@@ -433,6 +462,7 @@ public sealed class ArchimedesScrewModSystem : ModSystem
         }
 
         Config.Water.CopyValuesFrom(pendingWaterConfig);
+        VerboseDebugEnabled = Config.Water.VerboseDebug;
         pendingWaterConfig = null;
 
         if (pendingRequiresCentralTickRestart)
@@ -542,6 +572,9 @@ public sealed class ArchimedesScrewModSystem : ModSystem
                 return true;
             case "WATERFALL_COMPAT_DEBUG":
                 target.WaterfallCompatDebug = tree.GetBool("value");
+                return true;
+            case "VERBOSE_DEBUG":
+                target.VerboseDebug = tree.GetBool("value");
                 return true;
             default:
                 return false;

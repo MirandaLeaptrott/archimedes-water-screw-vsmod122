@@ -25,14 +25,14 @@ internal sealed class WaterfallCompatBridge : IDisposable
         if (!waterConfig.EnableWaterfallCompat)
         {
             Unpatch();
-            api.Logger.Notification("{0} [compat/waterfall] Compatibility disabled by config", ArchimedesScrewModSystem.LogPrefix);
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger, "{0} [compat/waterfall] Compatibility disabled by config", ArchimedesScrewModSystem.LogPrefix);
             return;
         }
 
         if (!api.ModLoader.IsModEnabled(WaterfallModId))
         {
             Unpatch();
-            api.Logger.Notification("{0} [compat/waterfall] Mod not installed; compat inactive", ArchimedesScrewModSystem.LogPrefix);
+            ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger, "{0} [compat/waterfall] Mod not installed; compat inactive", ArchimedesScrewModSystem.LogPrefix);
             return;
         }
 
@@ -43,7 +43,7 @@ internal sealed class WaterfallCompatBridge : IDisposable
 
         harmony.PatchAll(typeof(WaterfallCompatPatch).Assembly);
         isPatched = true;
-        api.Logger.Notification("{0} [compat/waterfall] Compat patch set active", ArchimedesScrewModSystem.LogPrefix);
+        ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger, "{0} [compat/waterfall] Compat patch set active", ArchimedesScrewModSystem.LogPrefix);
     }
 
     public void Dispose()
@@ -60,6 +60,6 @@ internal sealed class WaterfallCompatBridge : IDisposable
 
         harmony.UnpatchAll(harmony.Id);
         isPatched = false;
-        api.Logger.Notification("{0} [compat/waterfall] Compat unpatched", ArchimedesScrewModSystem.LogPrefix);
+        ArchimedesScrewModSystem.LogVerboseOrNotification(api.Logger, "{0} [compat/waterfall] Compat unpatched", ArchimedesScrewModSystem.LogPrefix);
     }
 }

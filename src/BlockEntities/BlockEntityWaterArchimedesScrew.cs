@@ -1221,7 +1221,11 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
 
     private void Log(string message, params object?[] args)
     {
-        Api?.Logger.Notification($"{ArchimedesScrewModSystem.LogPrefix} [controller:{ControllerId}] {message}", args);
+        ArchimedesScrewModSystem.LogVerbose(
+            Api?.Logger,
+            $"{ArchimedesScrewModSystem.LogPrefix} [controller:{ControllerId}] {message}",
+            args
+        );
     }
 
     private void LogStateChange(string name, ref bool? lastValue, bool value)
