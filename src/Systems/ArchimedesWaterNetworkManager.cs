@@ -42,6 +42,9 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
     private long postLoadReactivationListenerId;
     private int postLoadReactivationAttemptsRemaining;
 
+    /// <summary>Count of registered weak refs (includes unloaded targets); for save/load diagnostics only.</summary>
+    public int LoadedControllerWeakReferenceCount => loadedControllers.Count;
+
     public ArchimedesWaterNetworkManager(ICoreServerAPI api, ArchimedesScrewConfig config)
     {
         this.api = api;
@@ -328,6 +331,12 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         Dictionary<string, int[]>? ownedSources = LoadSerialized<Dictionary<string, int[]>>(SaveKeyControllerOwned);
         if (ownedSources == null)
         {
+            api.Logger.Notification(
+                "{0} Load: no mod blob {1} (first run or legacy save); ownership will come from block entities when chunks load",
+                ArchimedesScrewModSystem.LogPrefix,
+                SaveKeyControllerOwned
+            );
+
             if (droppedScrewKeys > 0 || droppedControllerPositions > 0)
             {
                 api.Logger.Warning(
@@ -349,8 +358,13 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
             return;
         }
 
-        foreach ((string controllerId, int[]? flatPositions) in ownedSources)
+        int modBlobControllerRows = ownedSources.Count;
+        int duplicateSourceClaims = 0;
+        List<(string ControllerId, string PosKey, string PreviousOwner)> conflictSamples = new();
+
+        foreach (string controllerId in ownedSources.Keys.OrderBy(id => id, StringComparer.Ordinal))
         {
+            int[]? flatPositions = ownedSources[controllerId];
             if (flatPositions == null || flatPositions.Length == 0)
             {
                 controllerOwnedById[controllerId] = Array.Empty<int>();
@@ -367,12 +381,42 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
                     continue;
                 }
 
+                duplicateSourceClaims++;
+                if (conflictSamples.Count < 5 &&
+                    !string.Equals(existing, controllerId, StringComparison.Ordinal))
+                {
+                    conflictSamples.Add((controllerId, key, existing));
+                }
+
                 // Deterministic conflict resolution for old saves that had multi-owner snapshots.
                 if (string.CompareOrdinal(controllerId, existing) < 0)
                 {
                     sourceOwnerByPos[key] = controllerId;
                 }
             }
+        }
+
+        api.Logger.Notification(
+            "{0} Load: merged mod ownership blob rows={1}, uniqueTrackedSources={2}, duplicatePositionClaimsWhileMerging={3}",
+            ArchimedesScrewModSystem.LogPrefix,
+            modBlobControllerRows,
+            sourceOwnerByPos.Count,
+            duplicateSourceClaims
+        );
+
+        if (duplicateSourceClaims > 0)
+        {
+            string sampleText = conflictSamples.Count > 0
+                ? string.Join(
+                    "; ",
+                    conflictSamples.Select(c =>
+                        $"pos={c.PosKey} keptLowerIdWinner claimant={c.ControllerId} other={c.PreviousOwner}"))
+                : "—";
+            api.Logger.Warning(
+                "{0} Load: {1} duplicate source position claim(s) while merging controllerowned (same cell listed for multiple controllers). Sample: {2}",
+                ArchimedesScrewModSystem.LogPrefix,
+                duplicateSourceClaims,
+                sampleText);
         }
 
         if (droppedScrewKeys > 0 || droppedControllerPositions > 0)
@@ -401,11 +445,13 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         api.WorldManager.SaveGame.StoreData(SaveKeyControllerPositions, SerializerUtil.Serialize(controllerPosById));
         api.WorldManager.SaveGame.StoreData(SaveKeyControllerOwned, SerializerUtil.Serialize(controllerOwnedById));
         api.Logger.Notification(
-            "{0} Saved water manager state: screws={1}, controllers={2}, trackedSources={3}",
+            "{0} Saved water manager state: screws={1}, controllerPosEntries={2}, controllerOwnedSnapshots={3}, trackedSources={4}, loadedControllerWeakRefs={5}",
             ArchimedesScrewModSystem.LogPrefix,
             screwBlockKeys.Count,
             controllerPosById.Count,
-            sourceOwnerByPos.Count
+            controllerOwnedById.Count,
+            sourceOwnerByPos.Count,
+            loadedControllers.Count
         );
     }
 
@@ -422,19 +468,128 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
 
     public void RegisterRestoredOwnership(string controllerId, BlockPos controllerPos, IReadOnlyCollection<BlockPos> sourcePositions)
     {
+        ReplaceSourceOwnershipForController(controllerId, controllerPos, sourcePositions, out int removedStale);
+        api.Logger.Debug(
+            "{0} RegisterRestoredOwnership controller={1} blockPos={2} sources={3} removedStaleSourceOwnerKeys={4}",
+            ArchimedesScrewModSystem.LogPrefix,
+            controllerId,
+            PosKey(controllerPos),
+            sourcePositions.Count,
+            removedStale
+        );
+    }
+
+    public void UpdateControllerSnapshot(string controllerId, BlockPos controllerPos, IReadOnlyCollection<BlockPos> sourcePositions)
+    {
+        ReplaceSourceOwnershipForController(controllerId, controllerPos, sourcePositions, out int removedStale);
+        if (removedStale > 0)
+        {
+            api.Logger.Debug(
+                "{0} UpdateControllerSnapshot controller={1} removed {2} stale sourceOwnerByPos entr(y/ies) not in BE snapshot",
+                ArchimedesScrewModSystem.LogPrefix,
+                controllerId,
+                removedStale
+            );
+        }
+    }
+
+    /// <summary>
+    /// After <see cref="Load"/>, re-apply ownership from block entities that initialized before <c>SaveGameLoaded</c>
+    /// (so their <see cref="RegisterRestoredOwnership"/> was wiped by the clear + mod blob merge).
+    /// </summary>
+    public void ReapplyOwnershipFromLoadedControllers()
+    {
+        int deadRefs = 0;
+        int reappliedControllers = 0;
+        int reappliedSources = 0;
+        List<string> samples = new();
+
+        foreach (WeakReference<BlockEntityWaterArchimedesScrew> wr in loadedControllers.Values.ToList())
+        {
+            if (!wr.TryGetTarget(out BlockEntityWaterArchimedesScrew? be))
+            {
+                deadRefs++;
+                continue;
+            }
+
+            if (!be.TryReapplyStoredOwnershipToWaterManager(out int sourceCount))
+            {
+                continue;
+            }
+
+            reappliedControllers++;
+            reappliedSources += sourceCount;
+            if (samples.Count < 4)
+            {
+                samples.Add($"{be.ControllerId}:{sourceCount}");
+            }
+        }
+
+        if (reappliedControllers > 0)
+        {
+            api.Logger.Notification(
+                "{0} Post-Load reapply from already-loaded block entities: controllersWithChunkOwnership={1}, totalSourcesReapplied={2}, deadWeakRefsSkipped={3}, sample controllerId:counts=[{4}]",
+                ArchimedesScrewModSystem.LogPrefix,
+                reappliedControllers,
+                reappliedSources,
+                deadRefs,
+                samples.Count > 0 ? string.Join(", ", samples) : "—"
+            );
+        }
+        else if (deadRefs > 0)
+        {
+            api.Logger.Debug(
+                "{0} Post-Load reapply: no chunk ownership merged; skipped {1} dead controller weak ref(s)",
+                ArchimedesScrewModSystem.LogPrefix,
+                deadRefs
+            );
+        }
+        else
+        {
+            api.Logger.Debug(
+                "{0} Post-Load reapply: no early-initialized controllers with chunk ownership (normal if chunks load after SaveGameLoaded)",
+                ArchimedesScrewModSystem.LogPrefix
+            );
+        }
+    }
+
+    /// <summary>
+    /// Sets controller snapshot and aligns <see cref="sourceOwnerByPos"/> so stale cells are not left pointing at this controller.
+    /// </summary>
+    private void ReplaceSourceOwnershipForController(
+        string controllerId,
+        BlockPos controllerPos,
+        IReadOnlyCollection<BlockPos> sourcePositions,
+        out int removedStaleSourceOwnerKeys)
+    {
         controllerPosById[controllerId] = PosKey(controllerPos);
         controllerOwnedById[controllerId] = EncodePositions(sourcePositions);
+
+        HashSet<string> newKeys = new(StringComparer.Ordinal);
+        foreach (BlockPos pos in sourcePositions)
+        {
+            newKeys.Add(PosKey(pos));
+        }
+
+        List<string> toRemove = new();
+        foreach (KeyValuePair<string, string> pair in sourceOwnerByPos)
+        {
+            if (string.Equals(pair.Value, controllerId, StringComparison.Ordinal) && !newKeys.Contains(pair.Key))
+            {
+                toRemove.Add(pair.Key);
+            }
+        }
+
+        removedStaleSourceOwnerKeys = toRemove.Count;
+        foreach (string key in toRemove)
+        {
+            sourceOwnerByPos.Remove(key);
+        }
 
         foreach (BlockPos pos in sourcePositions)
         {
             sourceOwnerByPos[PosKey(pos)] = controllerId;
         }
-    }
-
-    public void UpdateControllerSnapshot(string controllerId, BlockPos controllerPos, IReadOnlyCollection<BlockPos> sourcePositions)
-    {
-        controllerPosById[controllerId] = PosKey(controllerPos);
-        controllerOwnedById[controllerId] = EncodePositions(sourcePositions);
     }
 
     public void RemoveControllerSnapshot(string controllerId)
@@ -443,6 +598,29 @@ public sealed class ArchimedesWaterNetworkManager : IDisposable
         controllerOwnedById.Remove(controllerId);
         loadedControllers.Remove(controllerId);
         UnregisterFromCentralWaterTick(controllerId);
+
+        List<string> ownedKeys = new();
+        foreach (KeyValuePair<string, string> pair in sourceOwnerByPos)
+        {
+            if (string.Equals(pair.Value, controllerId, StringComparison.Ordinal))
+            {
+                ownedKeys.Add(pair.Key);
+            }
+        }
+
+        foreach (string key in ownedKeys)
+        {
+            sourceOwnerByPos.Remove(key);
+        }
+
+        if (ownedKeys.Count > 0)
+        {
+            api.Logger.Debug(
+                "{0} RemoveControllerSnapshot: cleared {1} sourceOwnerByPos entr(y/ies) for controller={2}",
+                ArchimedesScrewModSystem.LogPrefix,
+                ownedKeys.Count,
+                controllerId);
+        }
     }
 
     public void RegisterScrewBlock(BlockPos pos)

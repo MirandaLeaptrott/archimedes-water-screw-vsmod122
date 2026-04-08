@@ -16,7 +16,14 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
     private const string ControllerIdKey = "controllerId";
     private const string LastSeedKey = "lastSeed";
     private const string WasControllerKey = "wasController";
+    private const string LastEffectiveRelayCapKey = "lastEffectiveRelayCap";
     private const int LowCadenceConnectivityScanStride = 3;
+
+    /// <summary>
+    /// After world load, BFS from the seed often does not yet include the full managed-water chain (fluid updates / reactivation still running).
+    /// Skipping <see cref="DrainUnsupportedSources"/> briefly prevents false "disconnected" releases of valid relays.
+    /// </summary>
+    private const int PostLoadDrainUnsupportedGraceMs = 12000;
 
     private readonly Dictionary<string, BlockPos> ownedPositions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, BlockPos> relayOwnedPositions = new(StringComparer.Ordinal);
@@ -30,6 +37,12 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
     private ArchimedesScrewControllerSchedule lastScheduledCadence = ArchimedesScrewControllerSchedule.HighCadence;
     private int lowCadenceScanSkipsRemaining;
     private int lastEffectiveRelayCap;
+
+    /// <summary>-1 = attribute absent in save (use power/relay-count seed on init).</summary>
+    private int deserializedLastEffectiveRelayCap = -1;
+
+    /// <summary>While <see cref="Environment.TickCount64"/> is less than this, drain is skipped (0 = inactive).</summary>
+    private long drainUnsupportedGraceUntilMs;
 
     private long assemblyAnalysisCachedAtMs = long.MinValue;
     private ArchimedesScrewAssemblyAnalyzer.AssemblyStatus? cachedAssemblyAnalysis;
@@ -61,13 +74,16 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
 
         if (ownedPositions.Count > 0)
         {
+            drainUnsupportedGraceUntilMs = Environment.TickCount64 + PostLoadDrainUnsupportedGraceMs;
             waterManager?.RegisterRestoredOwnership(ControllerId, Pos, ownedPositions.Values.ToList());
-            Log("Restored {0} owned Archimedes source positions from save", ownedPositions.Count);
+            Log("Restored {0} owned Archimedes source positions from save (chunk NBT → manager)", ownedPositions.Count);
         }
         if (relayOwnedPositions.Count > 0)
         {
             Log("Restored {0} relay-owned source positions from save", relayOwnedPositions.Count);
         }
+
+        ApplyRelayCapStateAfterLoadOrPlacement();
 
         nextCentralWaterTickDueMs = 0;
         nextRelayCreationDueMs = 0;
@@ -77,6 +93,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
     public override void OnBlockPlaced(ItemStack? byItemStack = null)
     {
         base.OnBlockPlaced(byItemStack);
+        drainUnsupportedGraceUntilMs = 0;
         waterManager?.RegisterScrewBlock(Pos);
         waterManager?.RegisterLoadedController(this);
         InvalidateAssemblyAnalysisCache();
@@ -102,6 +119,33 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         waterManager?.UnregisterFromCentralWaterTick(ControllerId);
         waterManager?.UnregisterLoadedController(ControllerId);
         base.OnBlockUnloaded();
+    }
+
+    /// <summary>
+    /// Re-runs chunk → manager ownership sync after <see cref="ArchimedesWaterNetworkManager.Load"/> may have cleared manager state
+    /// for controllers that initialized before <c>SaveGameLoaded</c>.
+    /// </summary>
+    public bool TryReapplyStoredOwnershipToWaterManager(out int sourceCount)
+    {
+        sourceCount = 0;
+        if (Api?.Side != EnumAppSide.Server || ownedPositions.Count == 0)
+        {
+            return false;
+        }
+
+        ArchimedesScrewModSystem modSystem = Api.ModLoader.GetModSystem<ArchimedesScrewModSystem>();
+        ArchimedesWaterNetworkManager? mgr = modSystem.WaterManager;
+        if (mgr == null)
+        {
+            return false;
+        }
+
+        waterManager = mgr;
+        waterConfig ??= modSystem.Config.Water;
+        drainUnsupportedGraceUntilMs = Environment.TickCount64 + PostLoadDrainUnsupportedGraceMs;
+        mgr.RegisterRestoredOwnership(ControllerId, Pos, ownedPositions.Values.ToList());
+        sourceCount = ownedPositions.Count;
+        return true;
     }
 
     public void LogDebugControllerStats()
@@ -337,6 +381,8 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
 
         byte[]? seedBytes = tree.GetBytes(LastSeedKey);
         lastSeedPos = seedBytes == null ? null : DecodeSinglePos(SerializerUtil.Deserialize<int[]>(seedBytes));
+
+        deserializedLastEffectiveRelayCap = tree.GetInt(LastEffectiveRelayCapKey, -1);
     }
 
     public override void ToTreeAttributes(ITreeAttribute tree)
@@ -347,6 +393,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         tree.SetBool(WasControllerKey, wasController);
         tree.SetBytes(OwnedPositionsKey, SerializerUtil.Serialize(EncodePositions(ownedPositions.Values)));
         tree.SetBytes(RelayPositionsKey, SerializerUtil.Serialize(EncodePositions(relayOwnedPositions.Values)));
+        tree.SetInt(LastEffectiveRelayCapKey, lastEffectiveRelayCap);
 
         if (lastSeedPos == null)
         {
@@ -550,6 +597,76 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         bool changed = waterManager.EnsureSourceOwned(ControllerId, seedPos, familyId);
         ownedPositions[ArchimedesWaterNetworkManager.PosKey(seedPos)] = seedPos.Copy();
         return changed;
+    }
+
+    /// <summary>
+    /// Hysteresis-free cap from mechanical power (matches the target inside <see cref="ComputeEffectiveRelayCap"/>).
+    /// </summary>
+    private int ComputeInstantaneousRelayCapForPower(float currentPower)
+    {
+        if (waterConfig == null || !waterConfig.EnableRelaySources)
+        {
+            return 0;
+        }
+
+        int configuredMax = Math.Max(0, waterConfig.MaxRelaySourcesPerController);
+        if (configuredMax == 0)
+        {
+            return 0;
+        }
+
+        float minPower = Math.Max(0f, waterConfig.MinimumNetworkSpeed);
+        float maxPower = Math.Max(minPower + 0.000001f, waterConfig.RequiredMechPowerForMaxRelay);
+        if (currentPower <= minPower)
+        {
+            return 0;
+        }
+
+        float normalized = Math.Clamp((currentPower - minPower) / (maxPower - minPower), 0f, 1f);
+        int targetCap = (int)MathF.Floor(configuredMax * normalized);
+        return Math.Clamp(targetCap, 0, configuredMax);
+    }
+
+    /// <summary>
+    /// Restores relay trim cap from save and/or prevents immediate mass trim when <see cref="lastEffectiveRelayCap"/> was 0
+    /// but <see cref="relayOwnedPositions"/> still lists many saved relays.
+    /// </summary>
+    private void ApplyRelayCapStateAfterLoadOrPlacement()
+    {
+        if (waterConfig == null || !waterConfig.EnableRelaySources)
+        {
+            lastEffectiveRelayCap = 0;
+            deserializedLastEffectiveRelayCap = -1;
+            return;
+        }
+
+        int configuredMax = Math.Max(0, waterConfig.MaxRelaySourcesPerController);
+        int relayCount = relayOwnedPositions.Count;
+        bool hadPersistedCap = deserializedLastEffectiveRelayCap >= 0;
+
+        if (hadPersistedCap)
+        {
+            lastEffectiveRelayCap = Math.Clamp(deserializedLastEffectiveRelayCap, 0, configuredMax);
+        }
+        else
+        {
+            lastEffectiveRelayCap = ComputeInstantaneousRelayCapForPower(GetCurrentMechanicalPower());
+        }
+
+        int beforeFloor = lastEffectiveRelayCap;
+        lastEffectiveRelayCap = Math.Min(configuredMax, Math.Max(relayCount, lastEffectiveRelayCap));
+        deserializedLastEffectiveRelayCap = -1;
+
+        if (relayCount > 0)
+        {
+            Log(
+                "Relay cap init: effective={0} (floorSavedRelays from {1}), configuredMax={2}, relayMarkers={3}, persistedNbt={4}",
+                lastEffectiveRelayCap,
+                beforeFloor,
+                configuredMax,
+                relayCount,
+                hadPersistedCap);
+        }
     }
 
     private int ComputeEffectiveRelayCap(float currentPower)
@@ -835,11 +952,11 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
                 continue;
             }
 
-            Block fluid = Api.World.BlockAccessor.GetBlock(pos, BlockLayersAccess.Fluid);
-            // Keep relay markers stable across temporary source/flow transitions.
-            // Remove only when the position is no longer owned by this controller
-            // or no longer an Archimedes-managed water block.
-            if (!ownedPositions.ContainsKey(key) || !waterManager.IsArchimedesWaterBlock(fluid))
+            bool stillOwned = ownedPositions.ContainsKey(key);
+            // Keep relay markers stable across temporary source/flow transitions,
+            // especially around save/load when fluid state can lag ownership restore.
+            // Remove only when ownership no longer includes this relay position.
+            if (!stillOwned)
             {
                 relayOwnedPositions.Remove(key);
             }
@@ -877,6 +994,12 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             return 0;
         }
 
+        long now = Environment.TickCount64;
+        if (now < drainUnsupportedGraceUntilMs)
+        {
+            return 0;
+        }
+
         List<BlockPos> toRelease = new();
         foreach (BlockPos pos in ownedPositions.Values)
         {
@@ -890,6 +1013,7 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         {
             return 0;
         }
+
         ArchimedesPerf.AddCount("controller.drainUnsupported.candidates", toRelease.Count);
 
         List<BlockPos> origins = new(referenceSeeds.Count);

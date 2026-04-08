@@ -42,9 +42,18 @@ public sealed class ArchimedesWaterDebugSourcePacket
 internal sealed class ArchimedesWaterDebugOverlay
 {
     private const int HighlightSlot = 76031;
-    private const int OwnedColor = unchecked((int)0xAA00FF00);
-    private const int UnownedColor = unchecked((int)0xAAFF0000);
-    private const int InconsistentOwnedColor = unchecked((int)0xAAFFAA00);
+
+    /// <summary>
+    /// <see cref="ICoreClientAPI.World.HighlightBlocks"/> expects packed <b>RGBA</b> (R = least-significant byte, A = most-significant),
+    /// i.e. <c>r | (g &lt;&lt; 8) | (b &lt;&lt; 16) | (a &lt;&lt; 24)</c> in little-endian. Using ARGB-style literals like <c>0xAAFF0000</c>
+    /// puts full red in the wrong byte and reads as blue.
+    /// </summary>
+    private static int PackHighlightRgba(byte r, byte g, byte b, byte a = 0xAA) =>
+        r | (g << 8) | (b << 16) | (a << 24);
+
+    private static readonly int OwnedColor = PackHighlightRgba(0x00, 0xFF, 0x00);
+    private static readonly int UnownedColor = PackHighlightRgba(0xFF, 0x00, 0x00);
+    private static readonly int InconsistentOwnedColor = PackHighlightRgba(0xFF, 0xCC, 0x00);
 
     private readonly ICoreClientAPI capi;
 

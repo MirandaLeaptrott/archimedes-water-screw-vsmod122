@@ -178,8 +178,9 @@ public sealed class ArchimedesScrewModSystem : ModSystem
 
     private void OnSaveGameLoaded()
     {
-        sapi?.Logger.Notification("{0} Save game loaded, restoring water manager state", LogPrefix);
+        sapi?.Logger.Notification("{0} SaveGameLoaded: loading mod water state (then re-merge chunk ownership if controllers initialized early)", LogPrefix);
         WaterManager?.Load();
+        WaterManager?.ReapplyOwnershipFromLoadedControllers();
         WaterManager?.BeginPostLoadReactivation();
         if (sapi != null)
         {
@@ -194,7 +195,18 @@ public sealed class ArchimedesScrewModSystem : ModSystem
 
     private void OnGameWorldSave()
     {
-        sapi?.Logger.Notification("{0} Saving water manager state", LogPrefix);
+        if (WaterManager != null)
+        {
+            sapi?.Logger.Notification(
+                "{0} GameWorldSave: persisting water manager (weak controller refs={1}; chunk BE data saves with map chunks)",
+                LogPrefix,
+                WaterManager.LoadedControllerWeakReferenceCount);
+        }
+        else
+        {
+            sapi?.Logger.Notification("{0} GameWorldSave: water manager unavailable", LogPrefix);
+        }
+
         WaterManager?.Save();
     }
 
