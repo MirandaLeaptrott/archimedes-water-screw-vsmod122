@@ -908,12 +908,17 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
     {
         TryArmTopologyChangeGrace(evaluation.FailureReason);
         bool forceDrain = forceDrainWhenInvalid && ShouldForceDrainWhenControllerInvalid(evaluation.FailureReason);
+        if (forceDrain)
+        {
+            ReconcileOwnedPositionsFromManager();
+        }
+
         int removed = DrainUnsupportedSources(
             Array.Empty<ArchimedesOutletState>(),
             EmptyKeySet,
             evaluation.FailureReason,
             ignoreGrace: forceDrain);
-        int orphanRemoved = CleanupUnownedManagedSourcesForControllerState();
+        int orphanRemoved = CleanupUnownedManagedSourcesForControllerState(ignoreGrace: forceDrain);
         ArchimedesScrewControllerSchedule schedule = ownedPositions.Count > 0 || removed > 0
             ? ArchimedesScrewControllerSchedule.HighCadence
             : ArchimedesScrewControllerSchedule.LowCadence;
@@ -1148,21 +1153,21 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         MarkDirty();
     }
 
-    private int CleanupUnownedManagedSourcesForControllerState()
+    private int CleanupUnownedManagedSourcesForControllerState(bool ignoreGrace = false)
     {
         if (waterManager == null || waterConfig == null)
         {
             return 0;
         }
 
-        if (Environment.TickCount64 < drainUnsupportedGraceUntilMs)
+        if (!ignoreGrace && Environment.TickCount64 < drainUnsupportedGraceUntilMs)
         {
             return 0;
         }
 
         // No owned/seed context means this controller cannot safely attribute nearby unowned
         // managed sources to itself; skipping prevents cross-controller delete loops.
-        if (ownedPositions.Count == 0 && lastSeedPos == null)
+        if (ownedPositions.Count == 0 && lastSeedPos == null && !ignoreGrace)
         {
             return 0;
         }
@@ -1174,8 +1179,35 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         }
 
         anchors.Add(Pos.Copy());
-        int budget = Math.Max(1, waterConfig.MaxBlocksPerStep * 2);
+        int budget = Math.Max(1, waterConfig.MaxBlocksPerStep * (ignoreGrace ? 8 : 2));
         return waterManager.CleanupUnownedManagedSourcesAroundAnchors(anchors, budget);
+    }
+
+    private void ReconcileOwnedPositionsFromManager()
+    {
+        if (waterManager == null)
+        {
+            return;
+        }
+
+        int added = 0;
+        foreach (BlockPos pos in waterManager.GetOwnedSourcePositionsForController(ControllerId))
+        {
+            string key = ArchimedesWaterNetworkManager.PosKey(pos);
+            if (ownedPositions.ContainsKey(key))
+            {
+                continue;
+            }
+
+            ownedPositions[key] = pos.Copy();
+            added++;
+        }
+
+        if (added > 0)
+        {
+            UpdateSnapshot();
+            Log("Reconciled {0} manager-owned source(s) into local ownership before force-drain", added);
+        }
     }
 
     private void LogTruncationPause(BlockPos seedPos, int visitedManagedCount)
@@ -1262,10 +1294,9 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
             return;
         }
 
-        // Structural/transient assembly failures can flap while streams settle around a newly
-        // placed intake. Briefly pausing drain/cleanup avoids create-delete loops.
-        if (!failureReason.StartsWith("assembly invalid:", StringComparison.Ordinal) &&
-            !failureReason.StartsWith("seed/output position ", StringComparison.Ordinal))
+        // Assembly topology failures use ShouldForceDrainWhenControllerInvalid → immediate drain
+        // (ignoreGrace). Grace here is only for transient blocked seed/output while fluids settle.
+        if (!failureReason.StartsWith("seed/output position ", StringComparison.Ordinal))
         {
             return;
         }
@@ -1291,7 +1322,8 @@ public sealed class BlockEntityWaterArchimedesScrew : BlockEntity
         }
 
         return reason.StartsWith("unsupported intake fluid:", StringComparison.Ordinal) ||
-               reason.StartsWith("assembly invalid: Intake is not placed inside supported vanilla or Archimedes water.", StringComparison.Ordinal);
+               reason.StartsWith("assembly invalid:", StringComparison.Ordinal) ||
+               string.Equals(reason, "block is not an intake controller", StringComparison.Ordinal);
     }
 
     private void LogStateChange(string name, ref bool? lastValue, bool value)

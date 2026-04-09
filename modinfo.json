@@ -1,12 +1,12 @@
 {
   "type": "code",
-  "modid": "archimedes-screw",
+  "modid": "thetruearchimedesscrew",
   "name": "Archimedes Screw",
   "authors": [
     "Grym7er"
   ],
   "description": "Adds a mechanically powered Archimedes screw that can pump water against gravity.",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "dependencies": {
     "game": "1.21.6",
     "survival": ""
